@@ -808,7 +808,8 @@ function importCSVToDatabase($csvFilePath, $monthReference, $userId, $replace = 
             'LastUpdateDate' => 'last_update_date'
         ];
 
-        // Prepara SQL para inserção
+        // Prepara SQL para inserção com proteção contra duplicatas
+        // Se sale_item_id + voucher_code já existem, atualiza os dados
         $sql = "INSERT INTO sales (
             sale_item_id, voucher_code, voucher_status, origin_place, campaign_name,
             package_name, product_name, product_value, sale_weekday, sale_datetime,
@@ -822,7 +823,34 @@ function importCSVToDatabase($csvFilePath, $monthReference, $userId, $replace = 
         ) VALUES (
             ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
             ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-        )";
+        ) ON DUPLICATE KEY UPDATE
+            voucher_status = VALUES(voucher_status),
+            origin_place = VALUES(origin_place),
+            campaign_name = VALUES(campaign_name),
+            package_name = VALUES(package_name),
+            product_name = VALUES(product_name),
+            product_value = VALUES(product_value),
+            sale_weekday = VALUES(sale_weekday),
+            sale_datetime = VALUES(sale_datetime),
+            visit_weekday = VALUES(visit_weekday),
+            visit_date = VALUES(visit_date),
+            manager = VALUES(manager),
+            promoter = VALUES(promoter),
+            visitor_name = VALUES(visitor_name),
+            visitor_document = VALUES(visitor_document),
+            visitor_email = VALUES(visitor_email),
+            visitor_birthdate = VALUES(visitor_birthdate),
+            visitor_sex = VALUES(visitor_sex),
+            visitor_address_street = VALUES(visitor_address_street),
+            visitor_address_number = VALUES(visitor_address_number),
+            visitor_address_burgh = VALUES(visitor_address_burgh),
+            visitor_mobile_phone = VALUES(visitor_mobile_phone),
+            visitor_address_city = VALUES(visitor_address_city),
+            visitor_address_state = VALUES(visitor_address_state),
+            visitor_address_postal_code = VALUES(visitor_address_postal_code),
+            visitor_address_country = VALUES(visitor_address_country),
+            dependencies_last_update_date = VALUES(dependencies_last_update_date),
+            last_update_date = VALUES(last_update_date)";
 
         $stmt = $db->prepare($sql);
 
@@ -1032,6 +1060,186 @@ function getMonthsInDatabase() {
     } catch (Exception $e) {
         error_log("Erro ao listar meses do banco: " . $e->getMessage());
         return [];
+    }
+}
+
+/**
+ * Remove duplicatas da tabela sales
+ * Mantém apenas o registro mais recente de cada sale_item_id + voucher_code
+ *
+ * @param int $userId ID do usuário executando a ação
+ * @return array
+ */
+function removeDuplicateSales($userId) {
+    try {
+        $db = Database::getConnection();
+
+        // Primeiro, identifica duplicatas
+        $sql = "SELECT sale_item_id, voucher_code, COUNT(*) as count
+                FROM sales
+                GROUP BY sale_item_id, voucher_code
+                HAVING count > 1";
+
+        $duplicates = Database::fetchAll($sql);
+
+        if (empty($duplicates)) {
+            return [
+                'success' => true,
+                'message' => 'Nenhuma duplicata encontrada!',
+                'removed' => 0
+            ];
+        }
+
+        $db->beginTransaction();
+
+        $total_removed = 0;
+
+        foreach ($duplicates as $dup) {
+            // Para cada duplicata, mantém apenas o registro mais recente (maior id)
+            $sql = "DELETE FROM sales
+                    WHERE sale_item_id = ? AND voucher_code = ?
+                    AND id NOT IN (
+                        SELECT * FROM (
+                            SELECT MAX(id)
+                            FROM sales
+                            WHERE sale_item_id = ? AND voucher_code = ?
+                        ) AS temp
+                    )";
+
+            $stmt = $db->prepare($sql);
+            $stmt->execute([
+                $dup['sale_item_id'],
+                $dup['voucher_code'],
+                $dup['sale_item_id'],
+                $dup['voucher_code']
+            ]);
+
+            $total_removed += $stmt->rowCount();
+        }
+
+        $db->commit();
+
+        // Log de auditoria
+        logAudit($userId, 'remove_duplicate_sales', 'sales', null, null, json_encode([
+            'duplicates_found' => count($duplicates),
+            'records_removed' => $total_removed
+        ]));
+
+        return [
+            'success' => true,
+            'message' => "Removidas $total_removed duplicatas! " . count($duplicates) . " conjuntos de duplicatas foram limpos.",
+            'removed' => $total_removed
+        ];
+
+    } catch (Exception $e) {
+        error_log("Erro ao remover duplicatas: " . $e->getMessage());
+
+        try {
+            $db->rollBack();
+        } catch (Exception $rollbackError) {
+            // Ignora
+        }
+
+        return [
+            'success' => false,
+            'message' => 'Erro ao remover duplicatas: ' . $e->getMessage()
+        ];
+    }
+}
+
+/**
+ * Deleta todos os dados de vendas do banco
+ *
+ * @param int $userId ID do usuário executando a ação
+ * @return array
+ */
+function deleteAllSalesData($userId) {
+    try {
+        $db = Database::getConnection();
+
+        // Conta quantos registros serão deletados
+        $sql = "SELECT COUNT(*) as count FROM sales";
+        $result = Database::fetchOne($sql);
+        $count = $result['count'];
+
+        if ($count == 0) {
+            return [
+                'success' => true,
+                'message' => 'Nenhum dado para deletar.',
+                'deleted' => 0
+            ];
+        }
+
+        // Deleta todos os registros
+        $sql = "DELETE FROM sales";
+        Database::execute($sql);
+
+        // Log de auditoria
+        logAudit($userId, 'delete_all_sales', 'sales', null, null, json_encode([
+            'records_deleted' => $count
+        ]));
+
+        return [
+            'success' => true,
+            'message' => "Todos os dados foram deletados! ($count registros removidos)",
+            'deleted' => $count
+        ];
+
+    } catch (Exception $e) {
+        error_log("Erro ao deletar dados: " . $e->getMessage());
+
+        return [
+            'success' => false,
+            'message' => 'Erro ao deletar dados: ' . $e->getMessage()
+        ];
+    }
+}
+
+/**
+ * Deleta dados de vendas de um mês específico
+ *
+ * @param string $monthReference Mês no formato YYYY-MM
+ * @param int $userId ID do usuário executando a ação
+ * @return array
+ */
+function deleteSalesDataByMonth($monthReference, $userId) {
+    try {
+        // Conta quantos registros serão deletados
+        $sql = "SELECT COUNT(*) as count FROM sales WHERE month_reference = ?";
+        $result = Database::fetchOne($sql, [$monthReference]);
+        $count = $result['count'];
+
+        if ($count == 0) {
+            return [
+                'success' => true,
+                'message' => 'Nenhum dado encontrado para este mês.',
+                'deleted' => 0
+            ];
+        }
+
+        // Deleta registros do mês
+        $sql = "DELETE FROM sales WHERE month_reference = ?";
+        Database::execute($sql, [$monthReference]);
+
+        // Log de auditoria
+        logAudit($userId, 'delete_sales_month', 'sales', null, null, json_encode([
+            'month' => $monthReference,
+            'records_deleted' => $count
+        ]));
+
+        return [
+            'success' => true,
+            'message' => "Dados de $monthReference deletados! ($count registros removidos)",
+            'deleted' => $count
+        ];
+
+    } catch (Exception $e) {
+        error_log("Erro ao deletar dados do mês: " . $e->getMessage());
+
+        return [
+            'success' => false,
+            'message' => 'Erro ao deletar dados: ' . $e->getMessage()
+        ];
     }
 }
 

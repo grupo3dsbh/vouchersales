@@ -212,6 +212,7 @@ function createTables() {
             `imported_by` INT(11) UNSIGNED NULL,
             `imported_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (`id`),
+            UNIQUE KEY `uk_sale_voucher` (`sale_item_id`, `voucher_code`),
             INDEX `idx_voucher_code` (`voucher_code`),
             INDEX `idx_promoter` (`promoter`),
             INDEX `idx_month_reference` (`month_reference`),

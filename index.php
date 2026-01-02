@@ -225,6 +225,52 @@ if ($is_admin_mode && isset($_SESSION['admin_authenticated']) && isset($_POST['i
     }
 }
 
+// Remover duplicatas de vendas
+if ($is_admin_mode && isset($_SESSION['admin_authenticated']) && isset($_POST['remove_duplicates'])) {
+    $userId = $_SESSION['godmode_user_id'] ?? 1;
+    $result = removeDuplicateSales($userId);
+
+    if ($result['success']) {
+        $success_msg = $result['message'];
+    } else {
+        $error_msg = $result['message'];
+    }
+}
+
+// Deletar todos os dados de vendas
+if ($is_admin_mode && isset($_SESSION['admin_authenticated']) && isset($_POST['delete_all_sales'])) {
+    if (isset($_POST['confirm_delete_all']) && $_POST['confirm_delete_all'] === 'DELETAR TUDO') {
+        $userId = $_SESSION['godmode_user_id'] ?? 1;
+        $result = deleteAllSalesData($userId);
+
+        if ($result['success']) {
+            $success_msg = $result['message'];
+        } else {
+            $error_msg = $result['message'];
+        }
+    } else {
+        $error_msg = 'Confirmação inválida! Digite "DELETAR TUDO" para confirmar.';
+    }
+}
+
+// Deletar dados de um mês específico
+if ($is_admin_mode && isset($_SESSION['admin_authenticated']) && isset($_POST['delete_month_sales'])) {
+    $month_to_delete = $_POST['month_to_delete'] ?? '';
+
+    if (empty($month_to_delete)) {
+        $error_msg = 'Selecione um mês para deletar!';
+    } else {
+        $userId = $_SESSION['godmode_user_id'] ?? 1;
+        $result = deleteSalesDataByMonth($month_to_delete, $userId);
+
+        if ($result['success']) {
+            $success_msg = $result['message'];
+        } else {
+            $error_msg = $result['message'];
+        }
+    }
+}
+
 // Upload de CSV de Promotores
 if ($is_admin_mode && isset($_SESSION['admin_authenticated']) && isset($_FILES['promoters_csv_file']) && $_FILES['promoters_csv_file']['error'] == 0) {
     $upload_dir = DATA_DIR . '/';
@@ -1809,7 +1855,106 @@ $is_admin_authenticated = $is_admin_mode && isset($_SESSION['admin_authenticated
                                     </div>
                                 <?php endforeach; ?>
                             </div>
+
+                            <!-- Ferramentas de Gerenciamento -->
+                            <div style="margin-top: 20px; padding-top: 20px; border-top: 2px solid #667eea;">
+                                <h6 style="color: #333; margin-bottom: 15px;">
+                                    <i class="fas fa-tools"></i> Ferramentas de Gerenciamento
+                                </h6>
+                                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px;">
+                                    <!-- Remover Duplicatas -->
+                                    <div style="background: white; padding: 15px; border-radius: 8px; border: 2px solid #17a2b8;">
+                                        <h6 style="color: #0c5460; margin-bottom: 10px;">
+                                            <i class="fas fa-copy"></i> Remover Duplicatas
+                                        </h6>
+                                        <p style="font-size: 12px; color: #666; margin-bottom: 10px;">
+                                            Remove registros duplicados mantendo apenas a versão mais recente
+                                        </p>
+                                        <form method="POST" onsubmit="return confirm('Deseja remover todas as duplicatas? Esta ação não pode ser desfeita!')">
+                                            <button type="submit" name="remove_duplicates" class="btn btn-info btn-sm" style="width: 100%;">
+                                                <i class="fas fa-broom"></i> Limpar Duplicatas
+                                            </button>
+                                        </form>
+                                    </div>
+
+                                    <!-- Deletar Mês Específico -->
+                                    <div style="background: white; padding: 15px; border-radius: 8px; border: 2px solid #ffc107;">
+                                        <h6 style="color: #856404; margin-bottom: 10px;">
+                                            <i class="fas fa-calendar-times"></i> Deletar Mês
+                                        </h6>
+                                        <form method="POST" onsubmit="return confirm('ATENÇÃO: Todos os dados do mês selecionado serão deletados permanentemente!')">
+                                            <select name="month_to_delete" class="form-control" required style="margin-bottom: 10px; font-size: 12px;">
+                                                <option value="">-- Selecione --</option>
+                                                <?php foreach ($months_in_db as $m): ?>
+                                                    <option value="<?= htmlspecialchars($m['month_reference']) ?>">
+                                                        <?php
+                                                        list($y, $mon) = explode('-', $m['month_reference']);
+                                                        $months_pt = ['01' => 'Jan', '02' => 'Fev', '03' => 'Mar', '04' => 'Abr',
+                                                                      '05' => 'Mai', '06' => 'Jun', '07' => 'Jul', '08' => 'Ago',
+                                                                      '09' => 'Set', '10' => 'Out', '11' => 'Nov', '12' => 'Dez'];
+                                                        echo $months_pt[$mon] . '/' . $y;
+                                                        ?> (<?= number_format($m['total_records']) ?> registros)
+                                                    </option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                            <button type="submit" name="delete_month_sales" class="btn btn-warning btn-sm" style="width: 100%;">
+                                                <i class="fas fa-trash-alt"></i> Deletar Mês
+                                            </button>
+                                        </form>
+                                    </div>
+
+                                    <!-- Deletar Tudo -->
+                                    <div style="background: white; padding: 15px; border-radius: 8px; border: 2px solid #dc3545;">
+                                        <h6 style="color: #721c24; margin-bottom: 10px;">
+                                            <i class="fas fa-exclamation-triangle"></i> Deletar Tudo
+                                        </h6>
+                                        <p style="font-size: 12px; color: #666; margin-bottom: 10px;">
+                                            <strong>PERIGO:</strong> Remove todos os dados de vendas
+                                        </p>
+                                        <button type="button" class="btn btn-danger btn-sm" style="width: 100%;" onclick="showDeleteAllConfirmation()">
+                                            <i class="fas fa-bomb"></i> Deletar Tudo
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
+
+                        <!-- Modal de Confirmação de Deletar Tudo -->
+                        <div id="deleteAllModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 9999; align-items: center; justify-content: center;">
+                            <div style="background: white; padding: 30px; border-radius: 15px; max-width: 500px; box-shadow: 0 10px 40px rgba(0,0,0,0.3);">
+                                <h4 style="color: #dc3545; margin-bottom: 20px;">
+                                    <i class="fas fa-exclamation-triangle"></i> CONFIRMAÇÃO NECESSÁRIA
+                                </h4>
+                                <p style="margin-bottom: 20px; color: #333;">
+                                    Você está prestes a <strong style="color: #dc3545;">DELETAR PERMANENTEMENTE</strong> todos os dados de vendas do banco de dados!
+                                </p>
+                                <p style="margin-bottom: 20px; background: #fff3cd; padding: 15px; border-radius: 8px; border: 1px solid #ffc107;">
+                                    <strong>Para confirmar, digite:</strong><br>
+                                    <code style="background: #333; color: #fff; padding: 5px 10px; border-radius: 4px; font-size: 14px;">DELETAR TUDO</code>
+                                </p>
+                                <form method="POST">
+                                    <input type="text" name="confirm_delete_all" class="form-control" placeholder="Digite: DELETAR TUDO" required style="margin-bottom: 15px; font-size: 16px; text-align: center;">
+                                    <div style="display: flex; gap: 10px;">
+                                        <button type="button" class="btn btn-secondary" style="flex: 1;" onclick="closeDeleteAllModal()">
+                                            <i class="fas fa-times"></i> Cancelar
+                                        </button>
+                                        <button type="submit" name="delete_all_sales" class="btn btn-danger" style="flex: 1;">
+                                            <i class="fas fa-trash-alt"></i> Confirmar Exclusão
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+
+                        <script>
+                            function showDeleteAllConfirmation() {
+                                document.getElementById('deleteAllModal').style.display = 'flex';
+                            }
+
+                            function closeDeleteAllModal() {
+                                document.getElementById('deleteAllModal').style.display = 'none';
+                            }
+                        </script>
                     <?php endif; ?>
 
                     <!-- Formulário para importar CSVs existentes -->
