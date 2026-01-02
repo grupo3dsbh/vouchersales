@@ -1479,23 +1479,6 @@ $is_admin_authenticated = $is_admin_mode && isset($_SESSION['admin_authenticated
                                     <i class="fas fa-sign-in-alt"></i> Entrar
                                 </button>
                             </div>
-                            <script>
-                                $(document).ready(function() {
-                                    $('#promoter_name').select2({
-                                        placeholder: '-- Digite ou selecione seu nome --',
-                                        allowClear: true,
-                                        width: '100%',
-                                        language: {
-                                            noResults: function() {
-                                                return "Nenhum promotor encontrado";
-                                            },
-                                            searching: function() {
-                                                return "Buscando...";
-                                            }
-                                        }
-                                    });
-                                });
-                            </script>
                             <?php if ($godmode_enabled && $godmode_authenticated): ?>
                                 <!-- Opção de master code para admins -->
                                 <div style="margin-top: 15px; padding: 15px; background: #fff3cd; border-radius: 8px; border: 1px solid #ffc107;">
@@ -2435,6 +2418,21 @@ $is_admin_authenticated = $is_admin_mode && isset($_SESSION['admin_authenticated
                 placeholder: '-- Digite o nome do consultor --',
                 allowClear: true,
                 width: '100%'
+            });
+
+            // Inicializa Select2 no campo de login de promotor
+            $('#promoter_name').select2({
+                placeholder: '-- Digite ou selecione seu nome --',
+                allowClear: true,
+                width: '100%',
+                language: {
+                    noResults: function() {
+                        return "Nenhum promotor encontrado";
+                    },
+                    searching: function() {
+                        return "Buscando...";
+                    }
+                }
             });
             
             // Filtra tabela ao selecionar consultor
