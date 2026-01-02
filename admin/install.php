@@ -222,6 +222,33 @@ function createTables() {
         $db->exec($sql);
         addLog("✓ Tabela 'sales' criada/verificada.", 'success');
 
+        // Tabela de promotores/consultores
+        $sql = "CREATE TABLE IF NOT EXISTS `promoters` (
+            `id` INT(11) UNSIGNED NOT NULL AUTO_INCREMENT,
+            `name` VARCHAR(255) NOT NULL,
+            `title` VARCHAR(50) NULL,
+            `commission_percentage` DECIMAL(5, 2) NULL DEFAULT 25.00,
+            `status` ENUM('Ativo', 'Desativado') NOT NULL DEFAULT 'Ativo',
+            `document` VARCHAR(20) NULL COMMENT 'CPF',
+            `rg` VARCHAR(50) NULL,
+            `street` VARCHAR(255) NULL,
+            `number` VARCHAR(20) NULL,
+            `complement` VARCHAR(100) NULL,
+            `neighborhood` VARCHAR(100) NULL,
+            `city` VARCHAR(100) NULL,
+            `state` VARCHAR(2) NULL,
+            `postal_code` VARCHAR(20) NULL,
+            `mobile_phone` VARCHAR(20) NULL,
+            `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            `updated_at` DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`),
+            INDEX `idx_name` (`name`),
+            INDEX `idx_document` (`document`),
+            INDEX `idx_status` (`status`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;";
+        $db->exec($sql);
+        addLog("✓ Tabela 'promoters' criada/verificada.", 'success');
+
         return true;
     } catch (PDOException $e) {
         addError("✗ Erro ao criar tabelas: " . $e->getMessage());
