@@ -161,9 +161,27 @@ if ($is_admin_mode && isset($_SESSION['admin_authenticated']) && isset($_FILES['
     } else {
         $upload_month = $_POST['upload_month'];
         $target_file = getDataFile($upload_month);
-        
+
         if (move_uploaded_file($_FILES['csv_file']['tmp_name'], $target_file)) {
-            $success_msg = 'Arquivo enviado com sucesso para ' . basename($target_file) . '!';
+            $success_msg = 'Arquivo CSV salvo com sucesso!';
+
+            // Importa automaticamente para o banco de dados
+            $import_to_db = isset($_POST['import_to_db']) && $_POST['import_to_db'] === '1';
+            $replace_data = isset($_POST['replace_data']) && $_POST['replace_data'] === '1';
+
+            if ($import_to_db) {
+                $userId = $_SESSION['godmode_user_id'] ?? 1;
+                $importResult = importCSVToDatabase($target_file, $upload_month, $userId, $replace_data);
+
+                if ($importResult['success']) {
+                    $success_msg .= ' ' . $importResult['message'];
+                } else {
+                    $error_msg = $importResult['message'];
+                }
+            } else {
+                $success_msg .= ' Use o botão "Importar para Banco de Dados" abaixo para importar os dados.';
+            }
+
             // Limpa cache apenas do mês específico
             if (isset($_SESSION['csv_data'][$upload_month])) {
                 unset($_SESSION['csv_data'][$upload_month]);
@@ -175,6 +193,31 @@ if ($is_admin_mode && isset($_SESSION['admin_authenticated']) && isset($_FILES['
             $available_months = getAvailableMonths();
         } else {
             $error_msg = 'Erro ao salvar arquivo!';
+        }
+    }
+}
+
+// Importar CSV existente para banco de dados
+if ($is_admin_mode && isset($_SESSION['admin_authenticated']) && isset($_POST['import_existing_csv'])) {
+    $import_month = $_POST['import_month'] ?? '';
+    $replace_existing = isset($_POST['replace_existing']) && $_POST['replace_existing'] === '1';
+
+    if (empty($import_month)) {
+        $error_msg = 'Por favor, selecione um mês para importar!';
+    } else {
+        $csv_file = getDataFile($import_month);
+
+        if (!file_exists($csv_file)) {
+            $error_msg = 'Arquivo CSV não encontrado!';
+        } else {
+            $userId = $_SESSION['godmode_user_id'] ?? 1;
+            $importResult = importCSVToDatabase($csv_file, $import_month, $userId, $replace_existing);
+
+            if ($importResult['success']) {
+                $success_msg = $importResult['message'];
+            } else {
+                $error_msg = $importResult['message'];
+            }
         }
     }
 }
@@ -1291,10 +1334,107 @@ $is_admin_authenticated = $is_admin_mode && isset($_SESSION['admin_authenticated
                             </label>
                             <input type="file" name="csv_file" accept=".csv" required>
                         </div>
+                        <div style="flex: 1; min-width: 200px;">
+                            <label style="display: block; margin-bottom: 10px; font-weight: 600; color: #333;">
+                                <i class="fas fa-database"></i> Opções:
+                            </label>
+                            <div style="display: flex; flex-direction: column; gap: 8px;">
+                                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                    <input type="checkbox" name="import_to_db" value="1" checked>
+                                    <span style="font-size: 13px;">Importar para Banco de Dados</span>
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                    <input type="checkbox" name="replace_data" value="1">
+                                    <span style="font-size: 13px; color: #dc3545;">Substituir dados existentes</span>
+                                </label>
+                            </div>
+                        </div>
                         <button type="submit" class="btn btn-danger" style="align-self: flex-end;">
                             <i class="fas fa-upload"></i> Enviar
                         </button>
                     </form>
+
+                    <?php
+                    // Busca meses no banco de dados
+                    $months_in_db = getMonthsInDatabase();
+                    if (!empty($months_in_db)):
+                    ?>
+                        <div style="margin-top: 30px; padding: 20px; background: #e7f3ff; border-radius: 10px; border: 2px solid #667eea;">
+                            <h5 style="margin-bottom: 15px; color: #333;">
+                                <i class="fas fa-database"></i> Dados no Banco de Dados
+                            </h5>
+                            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 15px;">
+                                <?php foreach ($months_in_db as $month_db):
+                                    list($year, $month) = explode('-', $month_db['month_reference']);
+                                    $months_pt = ['01' => 'Jan', '02' => 'Fev', '03' => 'Mar', '04' => 'Abr',
+                                                  '05' => 'Mai', '06' => 'Jun', '07' => 'Jul', '08' => 'Ago',
+                                                  '09' => 'Set', '10' => 'Out', '11' => 'Nov', '12' => 'Dez'];
+                                    $month_label = $months_pt[$month] . '/' . $year;
+                                ?>
+                                    <div style="background: white; padding: 15px; border-radius: 8px; border: 2px solid #667eea;">
+                                        <div style="font-weight: bold; color: #333; font-size: 16px; margin-bottom: 10px;">
+                                            <i class="fas fa-calendar-check"></i> <?= htmlspecialchars($month_label) ?>
+                                        </div>
+                                        <div style="font-size: 12px; color: #666; display: grid; gap: 5px;">
+                                            <div><i class="fas fa-file-alt"></i> <?= number_format($month_db['total_records']) ?> registros</div>
+                                            <div><i class="fas fa-users"></i> <?= $month_db['total_promoters'] ?> consultores</div>
+                                            <div><i class="fas fa-ticket-alt"></i> <?= number_format($month_db['total_vouchers']) ?> vouchers</div>
+                                            <div><i class="fas fa-dollar-sign"></i> R$ <?= number_format($month_db['total_value'], 2, ',', '.') ?></div>
+                                            <div style="margin-top: 5px; padding-top: 5px; border-top: 1px solid #ddd;">
+                                                <i class="fas fa-clock"></i> <?= date('d/m/Y H:i', strtotime($month_db['last_import'])) ?>
+                                            </div>
+                                        </div>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                        </div>
+                    <?php endif; ?>
+
+                    <!-- Formulário para importar CSVs existentes -->
+                    <?php if (!empty($available_months)): ?>
+                        <div style="margin-top: 30px; padding: 20px; background: #fff3cd; border-radius: 10px; border: 2px solid #ffc107;">
+                            <h5 style="margin-bottom: 15px; color: #856404;">
+                                <i class="fas fa-file-import"></i> Importar CSV Existente para Banco de Dados
+                            </h5>
+                            <form method="POST" style="display: grid; grid-template-columns: 1fr 1fr auto; gap: 15px; align-items: end;">
+                                <div>
+                                    <label style="display: block; margin-bottom: 5px; font-weight: 600; color: #333;">
+                                        <i class="fas fa-calendar"></i> Selecione o Mês:
+                                    </label>
+                                    <select name="import_month" class="form-control" required>
+                                        <option value="">-- Selecione --</option>
+                                        <?php foreach ($available_months as $month):
+                                            // Verifica se já tem no banco
+                                            $check = checkMonthDataInDatabase($month['value']);
+                                        ?>
+                                            <option value="<?= htmlspecialchars($month['value']) ?>">
+                                                <?= htmlspecialchars($month['label']) ?>
+                                                <?php if ($check['has_data']): ?>
+                                                    (<?= number_format($check['count']) ?> registros no banco)
+                                                <?php else: ?>
+                                                    (não importado)
+                                                <?php endif; ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin-bottom: 5px;">
+                                        <input type="checkbox" name="replace_existing" value="1">
+                                        <span style="font-size: 14px; font-weight: 600; color: #dc3545;">
+                                            <i class="fas fa-exclamation-triangle"></i> Substituir dados existentes
+                                        </span>
+                                    </label>
+                                    <small style="color: #666; display: block; margin-top: 5px;">
+                                        Se marcado, deletará todos os registros do mês antes de importar
+                                    </small>
+                                </div>
+                                <button type="submit" name="import_existing_csv" class="btn btn-warning">
+                                    <i class="fas fa-database"></i> Importar para Banco
+                                </button>
+                            </form>
+                        </div>
+                    <?php endif; ?>
                     
                     <?php if (!empty($available_months)): ?>
                         <div class="file-info" style="margin-top: 20px; padding-top: 20px; border-top: 2px solid #ddd;">

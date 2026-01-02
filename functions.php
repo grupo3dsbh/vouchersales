@@ -693,3 +693,288 @@ function sanitizeInput($data) {
     }
     return htmlspecialchars(strip_tags(trim($data)), ENT_QUOTES, 'UTF-8');
 }
+
+// ===== IMPORTAÇÃO DE CSV PARA BANCO =====
+
+/**
+ * Importa CSV para o banco de dados
+ *
+ * @param string $csvFilePath Caminho do arquivo CSV
+ * @param string $monthReference Mês de referência (YYYY-MM)
+ * @param int $userId ID do usuário que está importando
+ * @param bool $replace Se true, substitui dados existentes do mês
+ * @return array ['success' => bool, 'message' => string, 'stats' => array]
+ */
+function importCSVToDatabase($csvFilePath, $monthReference, $userId, $replace = false) {
+    try {
+        if (!file_exists($csvFilePath)) {
+            return ['success' => false, 'message' => 'Arquivo CSV não encontrado!'];
+        }
+
+        $db = Database::getConnection();
+
+        // Se replace = true, deleta dados existentes do mês
+        if ($replace) {
+            $sql = "DELETE FROM sales WHERE month_reference = ?";
+            $deleted = Database::execute($sql, [$monthReference]);
+
+            // Log de auditoria
+            logAudit($userId, 'delete_sales_month', 'sales', null, null, json_encode(['month' => $monthReference, 'deleted_rows' => $deleted]));
+        }
+
+        // Abre arquivo CSV
+        $handle = fopen($csvFilePath, 'r');
+        if ($handle === FALSE) {
+            return ['success' => false, 'message' => 'Erro ao abrir arquivo CSV!'];
+        }
+
+        // Remove BOM se existir
+        $bom = fread($handle, 3);
+        if ($bom !== "\xEF\xBB\xBF") {
+            rewind($handle);
+        }
+
+        // Detecta delimitador
+        $first_line = fgets($handle);
+        rewind($handle);
+        $bom = fread($handle, 3);
+        if ($bom !== "\xEF\xBB\xBF") {
+            rewind($handle);
+        }
+
+        $delimiter = (substr_count($first_line, "\t") > substr_count($first_line, ',')) ? "\t" : ',';
+
+        // Lê headers
+        $headers = fgetcsv($handle, 10000, $delimiter);
+
+        // Mapeia headers para campos do banco
+        $headerMap = [
+            'SaleItemsId' => 'sale_item_id',
+            'VoucherCode' => 'voucher_code',
+            'VoucherStatus' => 'voucher_status',
+            'OriginPlace' => 'origin_place',
+            'CampaignName' => 'campaign_name',
+            'PackageName' => 'package_name',
+            'ProductName' => 'product_name',
+            'ProductValue' => 'product_value',
+            'SaleWeekday' => 'sale_weekday',
+            'SaleDateTime' => 'sale_datetime',
+            'VisitWeekday' => 'visit_weekday',
+            'VisitDate' => 'visit_date',
+            'Manager' => 'manager',
+            'Promoter' => 'promoter',
+            'VisitorName' => 'visitor_name',
+            'VisitorDocument' => 'visitor_document',
+            'VisitorEmail' => 'visitor_email',
+            'VisitorBirthDate' => 'visitor_birthdate',
+            'VisitorSex' => 'visitor_sex',
+            'VisitorAddressStreet' => 'visitor_address_street',
+            'VisitorAddressNumber' => 'visitor_address_number',
+            'VisitorAddressBurgh' => 'visitor_address_burgh',
+            'VisitorMobilePhone' => 'visitor_mobile_phone',
+            'VisitorAddressCity' => 'visitor_address_city',
+            'VisitorAddressState' => 'visitor_address_state',
+            'VisitorAddressPostalCode' => 'visitor_address_postal_code',
+            'VisitorAddressCountry' => 'visitor_address_country',
+            'DependenciesLastUpdateDate' => 'dependencies_last_update_date',
+            'LastUpdateDate' => 'last_update_date'
+        ];
+
+        // Prepara SQL para inserção
+        $sql = "INSERT INTO sales (
+            sale_item_id, voucher_code, voucher_status, origin_place, campaign_name,
+            package_name, product_name, product_value, sale_weekday, sale_datetime,
+            visit_weekday, visit_date, manager, promoter, visitor_name,
+            visitor_document, visitor_email, visitor_birthdate, visitor_sex,
+            visitor_address_street, visitor_address_number, visitor_address_burgh,
+            visitor_mobile_phone, visitor_address_city, visitor_address_state,
+            visitor_address_postal_code, visitor_address_country,
+            dependencies_last_update_date, last_update_date,
+            month_reference, imported_by
+        ) VALUES (
+            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+        )";
+
+        $stmt = $db->prepare($sql);
+
+        $imported = 0;
+        $skipped = 0;
+        $errors = 0;
+
+        // Inicia transação para melhor performance
+        $db->beginTransaction();
+
+        while (($row = fgetcsv($handle, 10000, $delimiter)) !== FALSE) {
+            try {
+                if (count($headers) !== count($row)) {
+                    $skipped++;
+                    continue;
+                }
+
+                $data = array_combine($headers, $row);
+
+                // Converte valor para decimal
+                $productValue = $data['ProductValue'] ?? '0';
+                $productValue = str_replace(['R$', ' '], '', $productValue);
+                if (strpos($productValue, ',') !== false) {
+                    $productValue = str_replace(['.', ','], ['', '.'], $productValue);
+                }
+                $productValue = floatval($productValue);
+
+                // Converte datas
+                $saleDateTime = !empty($data['SaleDateTime']) && $data['SaleDateTime'] !== 'NULL'
+                    ? date('Y-m-d H:i:s', strtotime($data['SaleDateTime']))
+                    : null;
+
+                $visitDate = !empty($data['VisitDate']) && $data['VisitDate'] !== 'NULL'
+                    ? date('Y-m-d', strtotime($data['VisitDate']))
+                    : null;
+
+                $visitorBirthdate = !empty($data['VisitorBirthDate']) && $data['VisitorBirthDate'] !== 'NULL'
+                    ? date('Y-m-d', strtotime($data['VisitorBirthDate']))
+                    : null;
+
+                $dependenciesLastUpdateDate = !empty($data['DependenciesLastUpdateDate']) && $data['DependenciesLastUpdateDate'] !== 'NULL'
+                    ? date('Y-m-d H:i:s', strtotime($data['DependenciesLastUpdateDate']))
+                    : null;
+
+                $lastUpdateDate = !empty($data['LastUpdateDate']) && $data['LastUpdateDate'] !== 'NULL'
+                    ? date('Y-m-d H:i:s', strtotime($data['LastUpdateDate']))
+                    : null;
+
+                // Limpa promoter (remove aspas, espaços, etc)
+                $promoter = trim($data['Promoter'] ?? '', " \"\n\r\t");
+
+                // Prepara dados para inserção
+                $insertData = [
+                    $data['SaleItemsId'] ?? '',
+                    $data['VoucherCode'] ?? '',
+                    $data['VoucherStatus'] ?? null,
+                    $data['OriginPlace'] ?? null,
+                    $data['CampaignName'] ?? null,
+                    $data['PackageName'] ?? null,
+                    $data['ProductName'] ?? null,
+                    $productValue,
+                    $data['SaleWeekday'] ?? null,
+                    $saleDateTime,
+                    $data['VisitWeekday'] ?? null,
+                    $visitDate,
+                    $data['Manager'] ?? null,
+                    $promoter,
+                    $data['VisitorName'] ?? null,
+                    $data['VisitorDocument'] ?? null,
+                    $data['VisitorEmail'] ?? null,
+                    $visitorBirthdate,
+                    $data['VisitorSex'] ?? null,
+                    ($data['VisitorAddressStreet'] ?? '') === 'NULL' ? null : ($data['VisitorAddressStreet'] ?? null),
+                    ($data['VisitorAddressNumber'] ?? '') === 'NULL' ? null : ($data['VisitorAddressNumber'] ?? null),
+                    ($data['VisitorAddressBurgh'] ?? '') === 'NULL' ? null : ($data['VisitorAddressBurgh'] ?? null),
+                    $data['VisitorMobilePhone'] ?? null,
+                    ($data['VisitorAddressCity'] ?? '') === 'NULL' ? null : ($data['VisitorAddressCity'] ?? null),
+                    ($data['VisitorAddressState'] ?? '') === 'NULL' ? null : ($data['VisitorAddressState'] ?? null),
+                    ($data['VisitorAddressPostalCode'] ?? '') === 'NULL' ? null : ($data['VisitorAddressPostalCode'] ?? null),
+                    ($data['VisitorAddressCountry'] ?? '') === 'NULL' ? null : ($data['VisitorAddressCountry'] ?? null),
+                    $dependenciesLastUpdateDate,
+                    $lastUpdateDate,
+                    $monthReference,
+                    $userId
+                ];
+
+                $stmt->execute($insertData);
+                $imported++;
+
+            } catch (PDOException $e) {
+                $errors++;
+                error_log("Erro ao importar linha: " . $e->getMessage());
+                // Continua importando as outras linhas
+            }
+        }
+
+        // Commit da transação
+        $db->commit();
+        fclose($handle);
+
+        // Log de auditoria
+        logAudit($userId, 'import_csv', 'sales', null, null, json_encode([
+            'month' => $monthReference,
+            'imported' => $imported,
+            'skipped' => $skipped,
+            'errors' => $errors,
+            'replace' => $replace
+        ]));
+
+        $message = "Importação concluída! Registros importados: {$imported}";
+        if ($skipped > 0) $message .= ", pulados: {$skipped}";
+        if ($errors > 0) $message .= ", erros: {$errors}";
+
+        return [
+            'success' => true,
+            'message' => $message,
+            'stats' => [
+                'imported' => $imported,
+                'skipped' => $skipped,
+                'errors' => $errors,
+                'replace' => $replace
+            ]
+        ];
+
+    } catch (Exception $e) {
+        // Rollback em caso de erro
+        if (isset($db) && $db->inTransaction()) {
+            $db->rollBack();
+        }
+
+        error_log("Erro na importação de CSV: " . $e->getMessage());
+        return [
+            'success' => false,
+            'message' => 'Erro ao importar CSV: ' . $e->getMessage()
+        ];
+    }
+}
+
+/**
+ * Verifica se um mês já tem dados importados no banco
+ *
+ * @param string $monthReference
+ * @return array ['has_data' => bool, 'count' => int]
+ */
+function checkMonthDataInDatabase($monthReference) {
+    try {
+        $sql = "SELECT COUNT(*) as count FROM sales WHERE month_reference = ?";
+        $result = Database::fetchOne($sql, [$monthReference]);
+
+        return [
+            'has_data' => $result['count'] > 0,
+            'count' => (int)$result['count']
+        ];
+    } catch (Exception $e) {
+        error_log("Erro ao verificar dados do mês: " . $e->getMessage());
+        return ['has_data' => false, 'count' => 0];
+    }
+}
+
+/**
+ * Lista meses com dados no banco
+ *
+ * @return array
+ */
+function getMonthsInDatabase() {
+    try {
+        $sql = "SELECT
+                    month_reference,
+                    COUNT(*) as total_records,
+                    COUNT(DISTINCT promoter) as total_promoters,
+                    COUNT(DISTINCT voucher_code) as total_vouchers,
+                    SUM(product_value) as total_value,
+                    MAX(imported_at) as last_import
+                FROM sales
+                GROUP BY month_reference
+                ORDER BY month_reference DESC";
+
+        return Database::fetchAll($sql);
+    } catch (Exception $e) {
+        error_log("Erro ao listar meses do banco: " . $e->getMessage());
+        return [];
+    }
+}

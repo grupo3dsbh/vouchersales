@@ -175,6 +175,53 @@ function createTables() {
         $db->exec($sql);
         addLog("✓ Tabela 'audit_logs' criada/verificada.", 'success');
 
+        // Tabela de vendas (importadas dos CSVs)
+        $sql = "CREATE TABLE IF NOT EXISTS `sales` (
+            `id` BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+            `sale_item_id` VARCHAR(50) NOT NULL,
+            `voucher_code` VARCHAR(50) NOT NULL,
+            `voucher_status` VARCHAR(100) NULL,
+            `origin_place` VARCHAR(100) NULL,
+            `campaign_name` VARCHAR(255) NULL,
+            `package_name` VARCHAR(255) NULL,
+            `product_name` VARCHAR(255) NULL,
+            `product_value` DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
+            `sale_weekday` VARCHAR(20) NULL,
+            `sale_datetime` DATETIME NULL,
+            `visit_weekday` VARCHAR(20) NULL,
+            `visit_date` DATE NULL,
+            `manager` VARCHAR(255) NULL,
+            `promoter` VARCHAR(255) NOT NULL,
+            `visitor_name` VARCHAR(255) NULL,
+            `visitor_document` VARCHAR(50) NULL,
+            `visitor_email` VARCHAR(255) NULL,
+            `visitor_birthdate` DATE NULL,
+            `visitor_sex` VARCHAR(20) NULL,
+            `visitor_address_street` VARCHAR(255) NULL,
+            `visitor_address_number` VARCHAR(20) NULL,
+            `visitor_address_burgh` VARCHAR(100) NULL,
+            `visitor_mobile_phone` VARCHAR(50) NULL,
+            `visitor_address_city` VARCHAR(100) NULL,
+            `visitor_address_state` VARCHAR(50) NULL,
+            `visitor_address_postal_code` VARCHAR(20) NULL,
+            `visitor_address_country` VARCHAR(100) NULL,
+            `dependencies_last_update_date` DATETIME NULL,
+            `last_update_date` DATETIME NULL,
+            `month_reference` VARCHAR(7) NOT NULL COMMENT 'Formato: YYYY-MM',
+            `imported_by` INT(11) UNSIGNED NULL,
+            `imported_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`),
+            INDEX `idx_voucher_code` (`voucher_code`),
+            INDEX `idx_promoter` (`promoter`),
+            INDEX `idx_month_reference` (`month_reference`),
+            INDEX `idx_sale_datetime` (`sale_datetime`),
+            INDEX `idx_campaign_name` (`campaign_name`),
+            INDEX `idx_sale_item_id` (`sale_item_id`),
+            FOREIGN KEY (`imported_by`) REFERENCES `users`(`id`) ON DELETE SET NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;";
+        $db->exec($sql);
+        addLog("✓ Tabela 'sales' criada/verificada.", 'success');
+
         return true;
     } catch (PDOException $e) {
         addError("✗ Erro ao criar tabelas: " . $e->getMessage());

@@ -101,6 +101,12 @@ O instalador irá:
    - IP e User Agent
    - Dados antigos e novos (JSON)
 
+6. **sales** - Dados de vendas (importados dos CSVs)
+   - Todos os campos do CSV importados
+   - Referência ao mês (month_reference)
+   - Rastreamento de quem importou e quando
+   - Índices otimizados para consultas rápidas
+
 ---
 
 ## 🔐 Segurança
@@ -144,9 +150,60 @@ UPDATE config SET value = '7200' WHERE key = 'session_timeout';
 
 ### Modo Admin
 - Upload de arquivos CSV
+- **Importação automática para banco de dados**
+- **Opção de substituir dados existentes**
+- Visualização de dados importados
 - Gerenciamento de períodos
 - Exclusão de arquivos
-- Estatísticas por arquivo
+- Estatísticas por arquivo e por banco
+
+---
+
+## 📥 Como Importar CSVs para o Banco de Dados
+
+### Opção 1: Upload e Importação Simultânea
+
+1. Acesse como Admin (`?admin=1`)
+2. Faça login com a senha admin
+3. No formulário de upload:
+   - Selecione o mês/ano
+   - Escolha o arquivo CSV
+   - ✅ Marque "Importar para Banco de Dados"
+   - ⚠️ Opcionalmente marque "Substituir dados existentes" (se quiser atualizar)
+   - Clique em "Enviar"
+
+### Opção 2: Importar CSV Existente
+
+Se você já tem arquivos CSV na pasta `data/` e quer importá-los:
+
+1. Acesse a seção "Importar CSV Existente para Banco de Dados"
+2. Selecione o mês desejado
+3. ⚠️ Opcionalmente marque "Substituir dados existentes"
+4. Clique em "Importar para Banco"
+
+### O que acontece na importação?
+
+- ✅ Todos os dados do CSV são importados para a tabela `sales`
+- ✅ O sistema detecta automaticamente o delimitador (vírgula ou tab)
+- ✅ Datas são convertidas para formato MySQL
+- ✅ Valores monetários são convertidos corretamente
+- ✅ Transação do banco garante integridade (tudo ou nada)
+- ✅ Log de auditoria registra quem importou e quando
+
+### Substituir Dados Existentes
+
+**⚠️ ATENÇÃO:** Quando você marca "Substituir dados existentes":
+- Todos os registros do mês selecionado serão **deletados** do banco
+- Depois o CSV será importado novamente
+- Útil para **atualizar** dados quando receber uma versão corrigida do CSV
+- A ação é registrada nos logs de auditoria
+
+### Visualização dos Dados Importados
+
+Após a importação, você verá:
+- Cards com estatísticas de cada mês no banco
+- Número de registros, consultores, vouchers
+- Valor total e data da última importação
 
 ---
 
