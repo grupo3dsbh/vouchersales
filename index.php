@@ -225,6 +225,35 @@ if ($is_admin_mode && isset($_SESSION['admin_authenticated']) && isset($_POST['i
     }
 }
 
+// Upload de CSV de Promotores
+if ($is_admin_mode && isset($_SESSION['admin_authenticated']) && isset($_FILES['promoters_csv_file']) && $_FILES['promoters_csv_file']['error'] == 0) {
+    $upload_dir = DATA_DIR . '/';
+    $file_name = 'promoters_' . date('Ymd_His') . '.csv';
+    $target_file = $upload_dir . $file_name;
+
+    // Cria diretório se não existir
+    if (!is_dir($upload_dir)) {
+        mkdir($upload_dir, 0755, true);
+    }
+
+    if (move_uploaded_file($_FILES['promoters_csv_file']['tmp_name'], $target_file)) {
+        $replace_promoters = isset($_POST['replace_promoters']) && $_POST['replace_promoters'] === '1';
+        $userId = $_SESSION['godmode_user_id'] ?? 1;
+
+        $importResult = importPromotersCSV($target_file, $userId, $replace_promoters);
+
+        if ($importResult['success']) {
+            $success_msg = $importResult['message'];
+            // Remove arquivo temporário após importação bem-sucedida
+            @unlink($target_file);
+        } else {
+            $error_msg = $importResult['message'];
+        }
+    } else {
+        $error_msg = 'Erro ao fazer upload do arquivo de promotores!';
+    }
+}
+
 $csv_data = null;
 if ($data_file && file_exists($data_file)) {
     if (!isset($_SESSION['csv_data'][$selected_month])) {
@@ -266,9 +295,215 @@ if ($data_file && file_exists($data_file)) {
     $csv_data = $_SESSION['csv_data'][$selected_month] ?? null;
 }
 
-$selected_promoter = $_POST['promoter'] ?? $_SESSION['selected_promoter'] ?? null;
-if ($selected_promoter) {
-    $_SESSION['selected_promoter'] = $selected_promoter;
+// ===== AUTENTICAÇÃO DE PROMOTOR =====
+$promoter_auth_error = '';
+$promoter_auth_step = ''; // pode ser: 'select_name', 'verify_pin', 'verify_info', 'create_pin'
+
+// Logout de promotor
+if (isset($_POST['promoter_logout'])) {
+    unset($_SESSION['selected_promoter']);
+    unset($_SESSION['promoter_authenticated']);
+    unset($_SESSION['promoter_id']);
+}
+
+// Verifica master code (admin pode acessar qualquer promotor)
+if (isset($_POST['verify_master_code']) && !empty($_POST['master_code'])) {
+    $master_code = $_POST['master_code'];
+    $promoter_name = $_POST['promoter_name'] ?? '';
+
+    // Verifica se o usuário logado tem master code
+    $userId = $_SESSION['godmode_user_id'] ?? null;
+    if ($userId) {
+        $sql = "SELECT master_code FROM users WHERE id = ?";
+        $user = Database::fetchOne($sql, [$userId]);
+
+        if ($user && !empty($user['master_code']) && password_verify($master_code, $user['master_code'])) {
+            // Master code correto - autentica diretamente
+            $promoter = getPromoterByName($promoter_name);
+            if ($promoter) {
+                $_SESSION['selected_promoter'] = $promoter_name;
+                $_SESSION['promoter_authenticated'] = true;
+                $_SESSION['promoter_id'] = $promoter['id'];
+                $_SESSION['auth_method'] = 'master_code';
+
+                logAudit($userId, 'promoter_access_with_master_code', 'promoters', $promoter['id'], null, json_encode(['promoter' => $promoter_name]));
+            } else {
+                $promoter_auth_error = 'Promotor não encontrado no sistema!';
+            }
+        } else {
+            $promoter_auth_error = 'Código mestre inválido!';
+        }
+    }
+}
+
+// Tentativa de login (seleção de nome)
+if (isset($_POST['promoter_login']) && !empty($_POST['promoter_name'])) {
+    $promoter_name = sanitizeInput($_POST['promoter_name']);
+
+    // Busca promotor no banco
+    $promoter = getPromoterByName($promoter_name);
+
+    if (!$promoter) {
+        $promoter_auth_error = 'Promotor não encontrado no sistema! Entre em contato com o administrador.';
+    } elseif ($promoter['status'] !== 'Ativo') {
+        $promoter_auth_error = 'Seu cadastro está desativado. Entre em contato com o administrador.';
+    } else {
+        // Promotor existe e está ativo
+        $_SESSION['promoter_login_attempt'] = $promoter_name;
+        $_SESSION['promoter_id_temp'] = $promoter['id'];
+
+        // Verifica se já tem PIN cadastrado
+        if (!empty($promoter['pin'])) {
+            // Tem PIN - pede PIN
+            $promoter_auth_step = 'verify_pin';
+        } else {
+            // Não tem PIN - pede verificação pessoal (primeiro login)
+            $promoter_auth_step = 'verify_info';
+        }
+    }
+}
+
+// Verificação de PIN
+if (isset($_POST['verify_pin']) && isset($_SESSION['promoter_id_temp'])) {
+    $pin = $_POST['pin'] ?? '';
+    $promoter_id = $_SESSION['promoter_id_temp'];
+
+    if (verifyPromoterPIN($promoter_id, $pin)) {
+        // PIN correto
+        $promoter_name = $_SESSION['promoter_login_attempt'];
+        $_SESSION['selected_promoter'] = $promoter_name;
+        $_SESSION['promoter_authenticated'] = true;
+        $_SESSION['promoter_id'] = $promoter_id;
+        $_SESSION['auth_method'] = 'pin';
+
+        unset($_SESSION['promoter_login_attempt']);
+        unset($_SESSION['promoter_id_temp']);
+
+        logAudit($promoter_id, 'promoter_login_pin', 'promoters', $promoter_id);
+    } else {
+        // Verifica quantas tentativas
+        $sql = "SELECT pin_attempts FROM promoters WHERE id = ?";
+        $p = Database::fetchOne($sql, [$promoter_id]);
+
+        if ($p && $p['pin_attempts'] >= 3) {
+            $promoter_auth_error = 'PIN bloqueado após 3 tentativas incorretas! Por favor, faça a verificação com seus dados pessoais novamente.';
+            $promoter_auth_step = 'verify_info';
+        } else {
+            $remaining = 3 - ($p['pin_attempts'] ?? 0);
+            $promoter_auth_error = "PIN incorreto! Você tem mais $remaining tentativa(s).";
+            $promoter_auth_step = 'verify_pin';
+        }
+    }
+}
+
+// Verificação de informações pessoais (primeiro login ou após reset)
+if (isset($_POST['verify_info']) && isset($_SESSION['promoter_id_temp'])) {
+    $promoter_id = $_SESSION['promoter_id_temp'];
+    $verification_type = $_POST['verification_type'] ?? '';
+    $verification_value = $_POST['verification_value'] ?? '';
+
+    $sql = "SELECT * FROM promoters WHERE id = ?";
+    $promoter = Database::fetchOne($sql, [$promoter_id]);
+
+    $is_valid = false;
+
+    if ($promoter) {
+        switch ($verification_type) {
+            case 'cpf_last4':
+                // Últimos 4 dígitos do CPF
+                $cpf = preg_replace('/[^0-9]/', '', $promoter['document'] ?? '');
+                $last4 = substr($cpf, -4);
+                $is_valid = ($verification_value === $last4);
+                break;
+
+            case 'cpf_first4':
+                // Primeiros 4 dígitos do CPF
+                $cpf = preg_replace('/[^0-9]/', '', $promoter['document'] ?? '');
+                $first4 = substr($cpf, 0, 4);
+                $is_valid = ($verification_value === $first4);
+                break;
+
+            case 'middle_name':
+                // Nome do meio
+                $name_parts = explode(' ', trim($promoter['name']));
+                if (count($name_parts) >= 3) {
+                    // Pega o segundo nome (índice 1)
+                    $middle_name = strtoupper($name_parts[1]);
+                    $is_valid = (strtoupper(trim($verification_value)) === $middle_name);
+                }
+                break;
+        }
+    }
+
+    if ($is_valid) {
+        // Verificação bem-sucedida - pede para criar PIN
+        $promoter_auth_step = 'create_pin';
+    } else {
+        $promoter_auth_error = 'Informação incorreta! Tente novamente.';
+        $promoter_auth_step = 'verify_info';
+    }
+}
+
+// Criação de PIN após verificação
+if (isset($_POST['create_pin']) && isset($_SESSION['promoter_id_temp'])) {
+    $new_pin = $_POST['new_pin'] ?? '';
+    $confirm_pin = $_POST['confirm_pin'] ?? '';
+
+    if (strlen($new_pin) < 4) {
+        $promoter_auth_error = 'O PIN deve ter pelo menos 4 dígitos!';
+        $promoter_auth_step = 'create_pin';
+    } elseif ($new_pin !== $confirm_pin) {
+        $promoter_auth_error = 'Os PINs não conferem! Digite novamente.';
+        $promoter_auth_step = 'create_pin';
+    } else {
+        $promoter_id = $_SESSION['promoter_id_temp'];
+
+        if (updatePromoterPIN($promoter_id, $new_pin)) {
+            // PIN criado com sucesso - autentica
+            $promoter_name = $_SESSION['promoter_login_attempt'];
+            $_SESSION['selected_promoter'] = $promoter_name;
+            $_SESSION['promoter_authenticated'] = true;
+            $_SESSION['promoter_id'] = $promoter_id;
+            $_SESSION['auth_method'] = 'first_login';
+
+            unset($_SESSION['promoter_login_attempt']);
+            unset($_SESSION['promoter_id_temp']);
+
+            logAudit($promoter_id, 'promoter_pin_created', 'promoters', $promoter_id);
+
+            $success_msg = 'PIN criado com sucesso! Você já está autenticado.';
+        } else {
+            $promoter_auth_error = 'Erro ao criar PIN. Tente novamente.';
+            $promoter_auth_step = 'create_pin';
+        }
+    }
+}
+
+// Se há tentativa de login em andamento, continua no fluxo de autenticação
+if (isset($_SESSION['promoter_login_attempt']) && empty($promoter_auth_step)) {
+    $promoter_id = $_SESSION['promoter_id_temp'];
+    $sql = "SELECT pin FROM promoters WHERE id = ?";
+    $p = Database::fetchOne($sql, [$promoter_id]);
+
+    if (!empty($p['pin'])) {
+        $promoter_auth_step = 'verify_pin';
+    } else {
+        $promoter_auth_step = 'verify_info';
+    }
+}
+
+// Define o promotor selecionado (apenas se autenticado)
+$selected_promoter = null;
+if (isset($_SESSION['promoter_authenticated']) && $_SESSION['promoter_authenticated'] === true) {
+    $selected_promoter = $_SESSION['selected_promoter'];
+} elseif (isset($_POST['promoter']) && !isset($_POST['promoter_login'])) {
+    // Se tentou selecionar diretamente sem login, redireciona para login
+    $promoter_name = $_POST['promoter'];
+    $_POST['promoter_name'] = $promoter_name;
+    $_POST['promoter_login'] = '1';
+    // Reprocessa
+    header("Location: " . $_SERVER['PHP_SELF']);
+    exit;
 }
 
 $promoters = [];
@@ -1027,20 +1262,204 @@ $is_admin_authenticated = $is_admin_mode && isset($_SESSION['admin_authenticated
                 </div>
             <?php elseif ($csv_data && count($promoters) > 0): ?>
                 <div class="filter-section">
-                    <form method="POST">
-                        <input type="hidden" name="reference_month" value="<?= htmlspecialchars($selected_month) ?>">
-                        <label for="promoter" style="display: block; margin-bottom: 10px; font-weight: 600; color: #333;">
-                            <i class="fas fa-user"></i> Selecione seu nome:
-                        </label>
-                        <select name="promoter" id="promoter" onchange="this.form.submit()">
-                            <option value="">-- Selecione seu nome --</option>
-                            <?php foreach ($promoters as $promoter): ?>
-                                <option value="<?= htmlspecialchars($promoter) ?>" <?= $selected_promoter === $promoter ? 'selected' : '' ?>>
-                                    <?= htmlspecialchars($promoter) ?>
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
-                    </form>
+                    <?php if (!empty($promoter_auth_error)): ?>
+                        <div style="background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                            <i class="fas fa-exclamation-triangle"></i> <?= htmlspecialchars($promoter_auth_error) ?>
+                        </div>
+                    <?php endif; ?>
+
+                    <?php if ($selected_promoter && isset($_SESSION['promoter_authenticated'])): ?>
+                        <!-- Promotor já autenticado -->
+                        <div style="background: #d4edda; border: 2px solid #c3e6cb; padding: 20px; border-radius: 10px; margin-bottom: 20px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <div>
+                                    <h4 style="margin: 0; color: #155724;">
+                                        <i class="fas fa-user-check"></i> Olá, <?= htmlspecialchars($selected_promoter) ?>!
+                                    </h4>
+                                    <small style="color: #155724;">Você está autenticado e pode visualizar suas comissões.</small>
+                                </div>
+                                <form method="POST" style="margin: 0;">
+                                    <button type="submit" name="promoter_logout" class="btn" style="background: #856404; color: white;">
+                                        <i class="fas fa-sign-out-alt"></i> Sair
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+
+                    <?php elseif ($promoter_auth_step === 'verify_pin'): ?>
+                        <!-- Pede PIN -->
+                        <div style="background: #fff3cd; border: 2px solid #ffc107; padding: 20px; border-radius: 10px;">
+                            <h4 style="color: #856404; margin-bottom: 15px;">
+                                <i class="fas fa-lock"></i> Digite seu PIN
+                            </h4>
+                            <p style="color: #856404; margin-bottom: 15px;">
+                                Olá, <strong><?= htmlspecialchars($_SESSION['promoter_login_attempt']) ?></strong>!
+                                Por favor, digite seu PIN de 4 dígitos para continuar.
+                            </p>
+                            <form method="POST" style="max-width: 400px;">
+                                <input type="hidden" name="reference_month" value="<?= htmlspecialchars($selected_month) ?>">
+                                <div style="margin-bottom: 15px;">
+                                    <label style="display: block; margin-bottom: 5px; font-weight: 600;">PIN:</label>
+                                    <input type="password" name="pin" maxlength="8" class="form-control"
+                                           placeholder="Digite seu PIN" required autofocus
+                                           style="font-size: 18px; letter-spacing: 2px; text-align: center;">
+                                </div>
+                                <div style="display: flex; gap: 10px;">
+                                    <button type="submit" name="verify_pin" class="btn btn-success">
+                                        <i class="fas fa-check"></i> Verificar PIN
+                                    </button>
+                                    <button type="submit" name="promoter_logout" class="btn btn-secondary">
+                                        <i class="fas fa-arrow-left"></i> Cancelar
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+
+                    <?php elseif ($promoter_auth_step === 'verify_info'): ?>
+                        <!-- Pede verificação de informações pessoais -->
+                        <div style="background: #d1ecf1; border: 2px solid #17a2b8; padding: 20px; border-radius: 10px;">
+                            <h4 style="color: #0c5460; margin-bottom: 15px;">
+                                <i class="fas fa-user-shield"></i> Verificação de Identidade
+                            </h4>
+                            <p style="color: #0c5460; margin-bottom: 15px;">
+                                Olá, <strong><?= htmlspecialchars($_SESSION['promoter_login_attempt']) ?></strong>!<br>
+                                Para sua segurança, precisamos verificar sua identidade. Escolha uma das opções abaixo:
+                            </p>
+                            <form method="POST" style="max-width: 500px;">
+                                <input type="hidden" name="reference_month" value="<?= htmlspecialchars($selected_month) ?>">
+                                <div style="margin-bottom: 15px;">
+                                    <label style="display: block; margin-bottom: 5px; font-weight: 600;">Tipo de Verificação:</label>
+                                    <select name="verification_type" id="verification_type" class="form-control" required
+                                            onchange="updateVerificationPlaceholder()">
+                                        <option value="">-- Selecione --</option>
+                                        <option value="cpf_last4">Últimos 4 dígitos do CPF</option>
+                                        <option value="cpf_first4">Primeiros 4 dígitos do CPF</option>
+                                        <option value="middle_name">Nome do meio</option>
+                                    </select>
+                                </div>
+                                <div style="margin-bottom: 15px;">
+                                    <label style="display: block; margin-bottom: 5px; font-weight: 600;">Informação:</label>
+                                    <input type="text" name="verification_value" id="verification_value"
+                                           class="form-control" placeholder="Digite a informação" required
+                                           style="font-size: 16px;">
+                                </div>
+                                <div style="display: flex; gap: 10px;">
+                                    <button type="submit" name="verify_info" class="btn btn-info">
+                                        <i class="fas fa-check-circle"></i> Verificar
+                                    </button>
+                                    <button type="submit" name="promoter_logout" class="btn btn-secondary">
+                                        <i class="fas fa-arrow-left"></i> Cancelar
+                                    </button>
+                                </div>
+                            </form>
+                            <script>
+                                function updateVerificationPlaceholder() {
+                                    const type = document.getElementById('verification_type').value;
+                                    const input = document.getElementById('verification_value');
+
+                                    switch(type) {
+                                        case 'cpf_last4':
+                                            input.placeholder = 'Digite os 4 últimos dígitos do CPF';
+                                            input.maxLength = 4;
+                                            input.type = 'number';
+                                            break;
+                                        case 'cpf_first4':
+                                            input.placeholder = 'Digite os 4 primeiros dígitos do CPF';
+                                            input.maxLength = 4;
+                                            input.type = 'number';
+                                            break;
+                                        case 'middle_name':
+                                            input.placeholder = 'Digite seu nome do meio';
+                                            input.maxLength = 50;
+                                            input.type = 'text';
+                                            break;
+                                        default:
+                                            input.placeholder = 'Digite a informação';
+                                            input.type = 'text';
+                                    }
+                                }
+                            </script>
+                        </div>
+
+                    <?php elseif ($promoter_auth_step === 'create_pin'): ?>
+                        <!-- Criar novo PIN -->
+                        <div style="background: #d4edda; border: 2px solid #c3e6cb; padding: 20px; border-radius: 10px;">
+                            <h4 style="color: #155724; margin-bottom: 15px;">
+                                <i class="fas fa-key"></i> Criar seu PIN
+                            </h4>
+                            <p style="color: #155724; margin-bottom: 15px;">
+                                <strong>Parabéns, <?= htmlspecialchars($_SESSION['promoter_login_attempt']) ?>!</strong><br>
+                                Sua identidade foi verificada. Agora crie um PIN de 4 a 8 dígitos para facilitar seus próximos acessos.
+                            </p>
+                            <form method="POST" style="max-width: 400px;">
+                                <input type="hidden" name="reference_month" value="<?= htmlspecialchars($selected_month) ?>">
+                                <div style="margin-bottom: 15px;">
+                                    <label style="display: block; margin-bottom: 5px; font-weight: 600;">Novo PIN:</label>
+                                    <input type="password" name="new_pin" class="form-control"
+                                           placeholder="Digite seu novo PIN (4-8 dígitos)" required
+                                           minlength="4" maxlength="8"
+                                           style="font-size: 18px; letter-spacing: 2px; text-align: center;">
+                                </div>
+                                <div style="margin-bottom: 15px;">
+                                    <label style="display: block; margin-bottom: 5px; font-weight: 600;">Confirmar PIN:</label>
+                                    <input type="password" name="confirm_pin" class="form-control"
+                                           placeholder="Digite novamente" required
+                                           minlength="4" maxlength="8"
+                                           style="font-size: 18px; letter-spacing: 2px; text-align: center;">
+                                </div>
+                                <button type="submit" name="create_pin" class="btn btn-success">
+                                    <i class="fas fa-save"></i> Criar PIN e Entrar
+                                </button>
+                            </form>
+                        </div>
+
+                    <?php else: ?>
+                        <!-- Seleção de nome (login) -->
+                        <form method="POST">
+                            <input type="hidden" name="reference_month" value="<?= htmlspecialchars($selected_month) ?>">
+                            <label for="promoter_name" style="display: block; margin-bottom: 10px; font-weight: 600; color: #333;">
+                                <i class="fas fa-user"></i> Selecione seu nome para fazer login:
+                            </label>
+                            <div style="display: grid; grid-template-columns: 1fr auto; gap: 10px;">
+                                <select name="promoter_name" id="promoter_name" class="form-control" required>
+                                    <option value="">-- Selecione seu nome --</option>
+                                    <?php foreach ($promoters as $promoter): ?>
+                                        <option value="<?= htmlspecialchars($promoter) ?>">
+                                            <?= htmlspecialchars($promoter) ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <button type="submit" name="promoter_login" class="btn btn-primary">
+                                    <i class="fas fa-sign-in-alt"></i> Entrar
+                                </button>
+                            </div>
+                            <?php if ($godmode_enabled && $godmode_authenticated): ?>
+                                <!-- Opção de master code para admins -->
+                                <div style="margin-top: 15px; padding: 15px; background: #fff3cd; border-radius: 8px; border: 1px solid #ffc107;">
+                                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin-bottom: 10px;">
+                                        <input type="checkbox" id="use_master_code" onchange="toggleMasterCode()">
+                                        <span style="font-size: 13px; font-weight: 600; color: #856404;">
+                                            <i class="fas fa-unlock"></i> Usar Código Mestre (Admin)
+                                        </span>
+                                    </label>
+                                    <div id="master_code_field" style="display: none;">
+                                        <input type="password" name="master_code" class="form-control"
+                                               placeholder="Digite o código mestre" style="margin-bottom: 10px;">
+                                        <button type="submit" name="verify_master_code" class="btn btn-warning btn-sm">
+                                            <i class="fas fa-key"></i> Acessar com Código Mestre
+                                        </button>
+                                    </div>
+                                </div>
+                                <script>
+                                    function toggleMasterCode() {
+                                        const checkbox = document.getElementById('use_master_code');
+                                        const field = document.getElementById('master_code_field');
+                                        field.style.display = checkbox.checked ? 'block' : 'none';
+                                    }
+                                </script>
+                            <?php endif; ?>
+                        </form>
+                    <?php endif; ?>
                 </div>
                 
                 <?php if ($selected_promoter && isset($promoter_stats[$selected_promoter])): ?>
@@ -1438,7 +1857,95 @@ $is_admin_authenticated = $is_admin_mode && isset($_SESSION['admin_authenticated
                             </form>
                         </div>
                     <?php endif; ?>
-                    
+
+                    <!-- Formulário para importar CSV de Promotores -->
+                    <div style="margin-top: 30px; padding: 20px; background: #d1ecf1; border-radius: 10px; border: 2px solid #17a2b8;">
+                        <h5 style="margin-bottom: 15px; color: #0c5460;">
+                            <i class="fas fa-user-tie"></i> Importar Cadastro de Promotores (Consultores)
+                        </h5>
+                        <p style="font-size: 13px; color: #0c5460; margin-bottom: 15px;">
+                            <i class="fas fa-info-circle"></i> Faça upload de um CSV com os dados pessoais dos promotores para habilitar autenticação personalizada.
+                            <br><small>Formato esperado: Nome_Promotor, Titulo, Comissão, Status, Documento, Rg, Rua, Numero, Compl, Bairro, Cidade, UF, PostalCode, Celular</small>
+                        </p>
+                        <form method="POST" enctype="multipart/form-data" style="display: grid; grid-template-columns: 2fr 1fr auto; gap: 15px; align-items: end;">
+                            <div>
+                                <label style="display: block; margin-bottom: 5px; font-weight: 600; color: #333;">
+                                    <i class="fas fa-file-csv"></i> Arquivo CSV de Promotores:
+                                </label>
+                                <input type="file" name="promoters_csv_file" accept=".csv" class="form-control" required>
+                            </div>
+                            <div>
+                                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin-bottom: 5px;">
+                                    <input type="checkbox" name="replace_promoters" value="1">
+                                    <span style="font-size: 14px; font-weight: 600; color: #dc3545;">
+                                        <i class="fas fa-exclamation-triangle"></i> Substituir todos os promotores
+                                    </span>
+                                </label>
+                                <small style="color: #666; display: block; margin-top: 5px;">
+                                    Se marcado, deletará todos os promotores existentes antes de importar
+                                </small>
+                            </div>
+                            <button type="submit" class="btn btn-info">
+                                <i class="fas fa-upload"></i> Importar Promotores
+                            </button>
+                        </form>
+
+                        <?php
+                        // Mostra promotores já cadastrados
+                        $promoters_list = getAllPromoters();
+                        if (!empty($promoters_list)):
+                        ?>
+                            <div style="margin-top: 20px; padding-top: 20px; border-top: 2px solid #17a2b8;">
+                                <h6 style="color: #0c5460; margin-bottom: 10px;">
+                                    <i class="fas fa-users"></i> Promotores Cadastrados: <?= count($promoters_list) ?>
+                                </h6>
+                                <div style="max-height: 300px; overflow-y: auto; background: white; padding: 15px; border-radius: 8px;">
+                                    <table style="width: 100%; font-size: 12px;">
+                                        <thead>
+                                            <tr style="border-bottom: 2px solid #17a2b8;">
+                                                <th style="padding: 8px; text-align: left;">Nome</th>
+                                                <th style="padding: 8px; text-align: center;">Título</th>
+                                                <th style="padding: 8px; text-align: center;">Comissão</th>
+                                                <th style="padding: 8px; text-align: center;">CPF</th>
+                                                <th style="padding: 8px; text-align: center;">Status</th>
+                                                <th style="padding: 8px; text-align: center;">PIN</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <?php foreach ($promoters_list as $promo): ?>
+                                                <tr style="border-bottom: 1px solid #ddd;">
+                                                    <td style="padding: 8px;"><?= htmlspecialchars($promo['name']) ?></td>
+                                                    <td style="padding: 8px; text-align: center;"><?= htmlspecialchars($promo['title'] ?? '-') ?></td>
+                                                    <td style="padding: 8px; text-align: center;"><?= number_format($promo['commission_percentage'], 2, ',', '.') ?>%</td>
+                                                    <td style="padding: 8px; text-align: center; font-family: monospace;"><?= htmlspecialchars($promo['document'] ?? '-') ?></td>
+                                                    <td style="padding: 8px; text-align: center;">
+                                                        <span style="padding: 3px 8px; border-radius: 4px; font-size: 11px; <?= $promo['status'] === 'Ativo' ? 'background: #d4edda; color: #155724;' : 'background: #f8d7da; color: #721c24;' ?>">
+                                                            <?= htmlspecialchars($promo['status']) ?>
+                                                        </span>
+                                                    </td>
+                                                    <td style="padding: 8px; text-align: center;">
+                                                        <?php if (!empty($promo['pin'])): ?>
+                                                            <i class="fas fa-check-circle" style="color: #28a745;"></i>
+                                                        <?php else: ?>
+                                                            <i class="fas fa-times-circle" style="color: #dc3545;"></i>
+                                                        <?php endif; ?>
+                                                    </td>
+                                                </tr>
+                                            <?php endforeach; ?>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        <?php else: ?>
+                            <div style="margin-top: 15px; padding: 15px; background: #fff3cd; border-radius: 8px; border: 1px solid #ffc107;">
+                                <i class="fas fa-exclamation-triangle" style="color: #856404;"></i>
+                                <span style="color: #856404; font-size: 13px;">
+                                    Nenhum promotor cadastrado ainda. Faça o upload do CSV para começar.
+                                </span>
+                            </div>
+                        <?php endif; ?>
+                    </div>
+
                     <?php if (!empty($available_months)): ?>
                         <div class="file-info" style="margin-top: 20px; padding-top: 20px; border-top: 2px solid #ddd;">
                             <strong><i class="fas fa-history"></i> Arquivos Disponíveis:</strong>
