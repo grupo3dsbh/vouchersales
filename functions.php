@@ -742,10 +742,38 @@ function importCSVToDatabase($csvFilePath, $monthReference, $userId, $replace = 
             rewind($handle);
         }
 
-        $delimiter = (substr_count($first_line, "\t") > substr_count($first_line, ',')) ? "\t" : ',';
+        // Conta ocorrências de delimitadores
+        $tab_count = substr_count($first_line, "\t");
+        $comma_count = substr_count($first_line, ',');
+        $semicolon_count = substr_count($first_line, ';');
+
+        // Escolhe o delimitador mais comum
+        if ($tab_count > $comma_count && $tab_count > $semicolon_count) {
+            $delimiter = "\t";
+        } elseif ($semicolon_count > $comma_count) {
+            $delimiter = ';';
+        } else {
+            $delimiter = ',';
+        }
+
+        error_log("CSV Import Debug: Delimitador detectado: " . ($delimiter === "\t" ? 'TAB' : $delimiter));
 
         // Lê headers
         $headers = fgetcsv($handle, 10000, $delimiter);
+
+        // Debug: Valida headers
+        if (empty($headers) || !is_array($headers)) {
+            error_log("CSV Import Error: Headers não puderam ser lidos!");
+            fclose($handle);
+            return ['success' => false, 'message' => 'Erro ao ler cabeçalhos do CSV. Verifique o formato do arquivo.'];
+        }
+
+        // Remove espaços e BOM dos headers
+        $headers = array_map(function($header) {
+            return trim(str_replace("\xEF\xBB\xBF", '', $header));
+        }, $headers);
+
+        error_log("CSV Import Debug: Headers encontrados: " . implode(', ', array_slice($headers, 0, 5)) . "... (" . count($headers) . " colunas)");
 
         // Mapeia headers para campos do banco
         $headerMap = [
@@ -805,14 +833,32 @@ function importCSVToDatabase($csvFilePath, $monthReference, $userId, $replace = 
         // Inicia transação para melhor performance
         $db->beginTransaction();
 
+        $lineNumber = 1; // Contador de linhas
+
         while (($row = fgetcsv($handle, 10000, $delimiter)) !== FALSE) {
             try {
+                $lineNumber++;
+
+                // Debug: Log da primeira linha de dados
+                if ($lineNumber == 2) {
+                    error_log("CSV Import Debug: Primeira linha - Headers: " . count($headers) . " | Row: " . count($row));
+                    error_log("CSV Import Debug: Primeiros valores: " . implode(' | ', array_slice($row, 0, 5)));
+                }
+
                 if (count($headers) !== count($row)) {
+                    error_log("CSV Import Warning: Linha $lineNumber - Headers: " . count($headers) . " | Colunas: " . count($row));
                     $skipped++;
                     continue;
                 }
 
                 $data = array_combine($headers, $row);
+
+                // Valida se array_combine funcionou
+                if ($data === false) {
+                    error_log("CSV Import Error: array_combine falhou na linha $lineNumber");
+                    $skipped++;
+                    continue;
+                }
 
                 // Converte valor para decimal
                 $productValue = $data['ProductValue'] ?? '0';
@@ -904,9 +950,18 @@ function importCSVToDatabase($csvFilePath, $monthReference, $userId, $replace = 
             'replace' => $replace
         ]));
 
+        // Log final
+        error_log("CSV Import Finalizado: Importados: $imported | Pulados: $skipped | Erros: $errors");
+
         $message = "Importação concluída! Registros importados: {$imported}";
         if ($skipped > 0) $message .= ", pulados: {$skipped}";
         if ($errors > 0) $message .= ", erros: {$errors}";
+
+        // Se nenhum registro foi importado, algo está errado
+        if ($imported == 0 && $errors == 0) {
+            error_log("CSV Import Warning: Nenhum registro foi importado!");
+            $message .= " ATENÇÃO: Nenhum registro foi importado. Verifique o formato do arquivo CSV.";
+        }
 
         return [
             'success' => true,
@@ -915,7 +970,8 @@ function importCSVToDatabase($csvFilePath, $monthReference, $userId, $replace = 
                 'imported' => $imported,
                 'skipped' => $skipped,
                 'errors' => $errors,
-                'replace' => $replace
+                'replace' => $replace,
+                'total_lines' => $lineNumber
             ]
         ];
 
