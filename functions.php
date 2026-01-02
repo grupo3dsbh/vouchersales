@@ -1656,3 +1656,130 @@ function maskMiddleNames($fullName) {
     // Mascara os nomes do meio
     return $firstName . ' *** ' . $lastName;
 }
+
+/**
+ * Busca saldo acumulado de um promotor nos meses anteriores
+ * Consulta o banco de dados e verifica status de pagamento
+ *
+ * @param string $promoterName Nome do promotor
+ * @param string $currentMonth Mês atual (formato YYYY-MM)
+ * @return array
+ */
+function getPromoterAccumulatedBalance($promoterName, $currentMonth) {
+    try {
+        $sql = "SELECT 
+                    s.month_reference,
+                    COUNT(DISTINCT s.voucher_code) as quantity,
+                    SUM(s.product_value) as total,
+                    p.paid,
+                    p.paid_at,
+                    p.paid_by
+                FROM sales s
+                LEFT JOIN payments p ON (s.promoter = p.promoter AND s.month_reference = p.month)
+                WHERE s.promoter = ? 
+                    AND s.month_reference < ?
+                    AND s.campaign_name NOT LIKE '%SITE%'
+                GROUP BY s.month_reference, p.paid, p.paid_at, p.paid_by
+                ORDER BY s.month_reference DESC";
+
+        $months = Database::fetchAll($sql, [$promoterName, $currentMonth]);
+
+        $result = [
+            'total_quantity' => 0,
+            'total_value' => 0,
+            'total_commission' => 0,
+            'months' => []
+        ];
+
+        foreach ($months as $month) {
+            $commission_percentage = 0.25; // 25%
+            
+            // Busca percentual de comissão do promotor no banco
+            $promoter = getPromoterByName($promoterName);
+            if ($promoter && !empty($promoter['commission_percentage'])) {
+                $commission_percentage = $promoter['commission_percentage'] / 100;
+            }
+
+            $commission = $month['total'] * $commission_percentage;
+
+            $result['months'][] = [
+                'month' => $month['month_reference'],
+                'quantity' => (int)$month['quantity'],
+                'total' => (float)$month['total'],
+                'commission' => $commission,
+                'paid' => (bool)$month['paid'],
+                'paid_at' => $month['paid_at'],
+                'paid_by' => $month['paid_by']
+            ];
+
+            // Só soma no acumulado se NÃO foi pago
+            if (!$month['paid']) {
+                $result['total_quantity'] += (int)$month['quantity'];
+                $result['total_value'] += (float)$month['total'];
+                $result['total_commission'] += $commission;
+            }
+        }
+
+        return $result;
+
+    } catch (Exception $e) {
+        error_log("Erro ao buscar saldo acumulado: " . $e->getMessage());
+        return [
+            'total_quantity' => 0,
+            'total_value' => 0,
+            'total_commission' => 0,
+            'months' => []
+        ];
+    }
+}
+
+/**
+ * Busca estatísticas do mês atual de um promotor
+ *
+ * @param string $promoterName Nome do promotor
+ * @param string $month Mês (formato YYYY-MM)
+ * @return array
+ */
+function getPromoterMonthStats($promoterName, $month) {
+    try {
+        $sql = "SELECT 
+                    COUNT(DISTINCT voucher_code) as quantity,
+                    SUM(product_value) as total
+                FROM sales
+                WHERE promoter = ? 
+                    AND month_reference = ?
+                    AND campaign_name NOT LIKE '%SITE%'";
+
+        $stats = Database::fetchOne($sql, [$promoterName, $month]);
+
+        if (!$stats) {
+            return [
+                'quantity' => 0,
+                'total' => 0,
+                'commission' => 0
+            ];
+        }
+
+        $commission_percentage = 0.25; // 25%
+        
+        // Busca percentual de comissão do promotor
+        $promoter = getPromoterByName($promoterName);
+        if ($promoter && !empty($promoter['commission_percentage'])) {
+            $commission_percentage = $promoter['commission_percentage'] / 100;
+        }
+
+        return [
+            'quantity' => (int)$stats['quantity'],
+            'total' => (float)$stats['total'],
+            'commission' => (float)$stats['total'] * $commission_percentage
+        ];
+
+    } catch (Exception $e) {
+        error_log("Erro ao buscar stats do mês: " . $e->getMessage());
+        return [
+            'quantity' => 0,
+            'total' => 0,
+            'commission' => 0
+        ];
+    }
+}

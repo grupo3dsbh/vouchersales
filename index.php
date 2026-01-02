@@ -570,71 +570,15 @@ if ($godmode_enabled && $godmode_authenticated && !empty($available_months)) {
 }
 // ===== FIM NOVO =====
 
-// Calcula saldo acumulado dos meses anteriores ao selecionado
+// Busca saldo acumulado dos meses anteriores (do banco de dados)
+$accumulated_data = [];
 if ($selected_month && $selected_promoter) {
-    foreach ($available_months as $month) {
-        // Apenas meses anteriores ao selecionado
-        if ($month['value'] < $selected_month) {
-            $prev_file = $month['file'];
-            if (file_exists($prev_file)) {
-                $prev_data = [];
-                if (($handle = fopen($prev_file, 'r')) !== FALSE) {
-                    $bom = fread($handle, 3);
-                    if ($bom !== "\xEF\xBB\xBF") {
-                        rewind($handle);
-                    }
-                    $first_line = fgets($handle);
-                    rewind($handle);
-                    $bom = fread($handle, 3);
-                    if ($bom !== "\xEF\xBB\xBF") {
-                        rewind($handle);
-                    }
-                    $delimiter = (substr_count($first_line, ';') > substr_count($first_line, ',')) ? ';' : ',';
-                    $headers = fgetcsv($handle, 10000, $delimiter);
-                    while (($row = fgetcsv($handle, 10000, $delimiter)) !== FALSE) {
-                        if (count($headers) === count($row)) {
-                            $prev_data[] = array_combine($headers, $row);
-                        }
-                    }
-                    fclose($handle);
-                }
-                
-                // Processa apenas vouchers do promotor selecionado
-                $prev_vouchers = [];
-                foreach ($prev_data as $row) {
-                    $voucher = $row['VoucherCode'] ?? '';
-                    $promoter = trim($row['Promoter'] ?? '', " \"\n\r\t"); // Remove espaços, aspas e quebras de linha
-                    $campaign = $row['CampaignName'] ?? '';
-                    
-                    // Ignora vendas de "Dayuse SITE"
-                    if (stripos($campaign, 'SITE') !== false) {
-                        continue;
-                    }
-                    
-                    if (!empty($voucher) && $promoter === $selected_promoter) {
-                        $value_raw = $row['ProductValue'] ?? '0';
-                        $value_clean = str_replace(['R$', ' '], '', $value_raw);
-                        if (strpos($value_clean, ',') !== false) {
-                            $value_clean = str_replace(['.', ','], ['', '.'], $value_clean);
-                        }
-                        $value = floatval($value_clean);
-                        
-                        if (!isset($prev_vouchers[$voucher])) {
-                            $prev_vouchers[$voucher] = 0;
-                        }
-                        $prev_vouchers[$voucher] += $value;
-                    }
-                }
-                
-                // Soma os totais
-                foreach ($prev_vouchers as $voucher => $total_value) {
-                    $accumulated_balance['quantity']++;
-                    $accumulated_balance['total'] += $total_value;
-                    $accumulated_balance['commission'] += ($total_value * 0.25);
-                }
-            }
-        }
-    }
+    $accumulated_data = getPromoterAccumulatedBalance($selected_promoter, $selected_month);
+    $accumulated_balance = [
+        'quantity' => $accumulated_data['total_quantity'],
+        'total' => $accumulated_data['total_value'],
+        'commission' => $accumulated_data['total_commission']
+    ];
 }
 
 if ($csv_data) {
@@ -1511,44 +1455,78 @@ $is_admin_authenticated = $is_admin_mode && isset($_SESSION['admin_authenticated
                 <?php if ($selected_promoter && isset($promoter_stats[$selected_promoter])): ?>
                     <?php $stats = $promoter_stats[$selected_promoter]; ?>
                     
-                    <?php if ($accumulated_balance['quantity'] > 0): ?>
-                        <div class="alert alert-info" style="background: linear-gradient(135deg, #17a2b8 0%, #138496 100%); color: white; border: none; padding: 20px;">
+                    <?php if (!empty($accumulated_data['months'])): ?>
+                        <div class="alert alert-info" style="background: linear-gradient(135deg, #17a2b8 0%, #138496 100%); color: white; border: none; padding: 20px; margin-bottom: 20px;">
                             <h4 style="margin-bottom: 15px; text-align: center;">
                                 <i class="fas fa-history"></i> Saldo Acumulado (Meses Anteriores)
-                                <br>
-                                <small style="font-size: 14px; opacity: 0.9; font-weight: normal;">
-                                    <?php
-                                        // Monta a lista de meses anteriores que compõem o acumulado
-                                        $accumulated_months = [];
-                                        foreach ($available_months as $month) {
-                                            if ($month['value'] < $selected_month) {
-                                                list($y, $m) = explode('-', $month['value']);
-                                                $months_pt = ['01' => 'Jan', '02' => 'Fev', '03' => 'Mar', '04' => 'Abr', 
-                                                              '05' => 'Mai', '06' => 'Jun', '07' => 'Jul', '08' => 'Ago',
-                                                              '09' => 'Set', '10' => 'Out', '11' => 'Nov', '12' => 'Dez'];
-                                                $accumulated_months[] = $months_pt[$m] . '/' . $y;
-                                            }
-                                        }
-                                        if (!empty($accumulated_months)) {
-                                            echo 'Período(s): ' . implode(', ', array_reverse($accumulated_months));
-                                        }
-                                    ?>
-                                </small>
                             </h4>
-                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px;">
-                                <div style="text-align: center;">
-                                    <div style="font-size: 12px; opacity: 0.9; margin-bottom: 5px;">Vouchers</div>
-                                    <div style="font-size: 24px; font-weight: bold;"><?= $accumulated_balance['quantity'] ?></div>
-                                </div>
-                                <div style="text-align: center;">
-                                    <div style="font-size: 12px; opacity: 0.9; margin-bottom: 5px;">Valor Total</div>
-                                    <div style="font-size: 24px; font-weight: bold;">R$ <?= number_format($accumulated_balance['total'], 2, ',', '.') ?></div>
-                                </div>
-                                <div style="text-align: center;">
-                                    <div style="font-size: 12px; opacity: 0.9; margin-bottom: 5px;">Comissão (25%)</div>
-                                    <div style="font-size: 24px; font-weight: bold;">R$ <?= number_format($accumulated_balance['commission'], 2, ',', '.') ?></div>
-                                </div>
+
+                            <!-- Detalhamento por Mês -->
+                            <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                                <table style="width: 100%; color: white;">
+                                    <thead>
+                                        <tr style="border-bottom: 2px solid rgba(255,255,255,0.3);">
+                                            <th style="padding: 10px; text-align: left;">Mês</th>
+                                            <th style="padding: 10px; text-align: center;">Vouchers</th>
+                                            <th style="padding: 10px; text-align: right;">Valor</th>
+                                            <th style="padding: 10px; text-align: right;">Comissão</th>
+                                            <th style="padding: 10px; text-align: center;">Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <?php foreach ($accumulated_data['months'] as $month_data):
+                                            list($y, $m) = explode('-', $month_data['month']);
+                                            $months_pt = ['01' => 'Jan', '02' => 'Fev', '03' => 'Mar', '04' => 'Abr',
+                                                          '05' => 'Mai', '06' => 'Jun', '07' => 'Jul', '08' => 'Ago',
+                                                          '09' => 'Set', '10' => 'Out', '11' => 'Nov', '12' => 'Dez'];
+                                        ?>
+                                            <tr style="border-bottom: 1px solid rgba(255,255,255,0.1);">
+                                                <td style="padding: 10px; font-weight: bold;"><?= $months_pt[$m] . '/' . $y ?></td>
+                                                <td style="padding: 10px; text-align: center;"><?= $month_data['quantity'] ?></td>
+                                                <td style="padding: 10px; text-align: right;">R$ <?= number_format($month_data['total'], 2, ',', '.') ?></td>
+                                                <td style="padding: 10px; text-align: right;">R$ <?= number_format($month_data['commission'], 2, ',', '.') ?></td>
+                                                <td style="padding: 10px; text-align: center;">
+                                                    <?php if ($month_data['paid']): ?>
+                                                        <span style="background: #28a745; padding: 5px 12px; border-radius: 15px; font-size: 12px; font-weight: bold;">
+                                                            <i class="fas fa-check-circle"></i> PAGO
+                                                        </span>
+                                                        <?php if ($month_data['paid_at']): ?>
+                                                            <br><small style="font-size: 10px; opacity: 0.8;"><?= date('d/m/Y', strtotime($month_data['paid_at'])) ?></small>
+                                                        <?php endif; ?>
+                                                    <?php else: ?>
+                                                        <span style="background: #dc3545; padding: 5px 12px; border-radius: 15px; font-size: 12px; font-weight: bold;">
+                                                            <i class="fas fa-clock"></i> PENDENTE
+                                                        </span>
+                                                    <?php endif; ?>
+                                                </td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    </tbody>
+                                </table>
                             </div>
+
+                            <!-- Totais (apenas meses não pagos) -->
+                            <?php if ($accumulated_balance['quantity'] > 0): ?>
+                                <div style="border-top: 2px solid rgba(255,255,255,0.3); padding-top: 15px;">
+                                    <h5 style="margin-bottom: 10px; text-align: center;">
+                                        <i class="fas fa-exclamation-circle"></i> Total Pendente (Meses Não Pagos)
+                                    </h5>
+                                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px;">
+                                        <div style="text-align: center;">
+                                            <div style="font-size: 12px; opacity: 0.9; margin-bottom: 5px;">Vouchers</div>
+                                            <div style="font-size: 24px; font-weight: bold;"><?= $accumulated_balance['quantity'] ?></div>
+                                        </div>
+                                        <div style="text-align: center;">
+                                            <div style="font-size: 12px; opacity: 0.9; margin-bottom: 5px;">Valor Total</div>
+                                            <div style="font-size: 24px; font-weight: bold;">R$ <?= number_format($accumulated_balance['total'], 2, ',', '.') ?></div>
+                                        </div>
+                                        <div style="text-align: center;">
+                                            <div style="font-size: 12px; opacity: 0.9; margin-bottom: 5px;">Comissão</div>
+                                            <div style="font-size: 24px; font-weight: bold;">R$ <?= number_format($accumulated_balance['commission'], 2, ',', '.') ?></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            <?php endif; ?>
                         </div>
                     <?php endif; ?>
                     
