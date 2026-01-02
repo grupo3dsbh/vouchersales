@@ -1467,11 +1467,11 @@ $is_admin_authenticated = $is_admin_mode && isset($_SESSION['admin_authenticated
                                 <i class="fas fa-user"></i> Selecione seu nome para fazer login:
                             </label>
                             <div style="display: grid; grid-template-columns: 1fr auto; gap: 10px;">
-                                <select name="promoter_name" id="promoter_name" class="form-control" required>
-                                    <option value="">-- Selecione seu nome --</option>
+                                <select name="promoter_name" id="promoter_name" class="form-control select2-promoter" required style="width: 100%;">
+                                    <option value="">-- Digite ou selecione seu nome --</option>
                                     <?php foreach ($promoters as $promoter): ?>
                                         <option value="<?= htmlspecialchars($promoter) ?>">
-                                            <?= htmlspecialchars($promoter) ?>
+                                            <?= htmlspecialchars(maskMiddleNames($promoter)) ?>
                                         </option>
                                     <?php endforeach; ?>
                                 </select>
@@ -1479,6 +1479,23 @@ $is_admin_authenticated = $is_admin_mode && isset($_SESSION['admin_authenticated
                                     <i class="fas fa-sign-in-alt"></i> Entrar
                                 </button>
                             </div>
+                            <script>
+                                $(document).ready(function() {
+                                    $('#promoter_name').select2({
+                                        placeholder: '-- Digite ou selecione seu nome --',
+                                        allowClear: true,
+                                        width: '100%',
+                                        language: {
+                                            noResults: function() {
+                                                return "Nenhum promotor encontrado";
+                                            },
+                                            searching: function() {
+                                                return "Buscando...";
+                                            }
+                                        }
+                                    });
+                                });
+                            </script>
                             <?php if ($godmode_enabled && $godmode_authenticated): ?>
                                 <!-- Opção de master code para admins -->
                                 <div style="margin-top: 15px; padding: 15px; background: #fff3cd; border-radius: 8px; border: 1px solid #ffc107;">

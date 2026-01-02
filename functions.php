@@ -1632,3 +1632,27 @@ function resetPromoterPIN($promoterId) {
         return false;
     }
 }
+
+/**
+ * Mascara os nomes do meio para segurança
+ * Exemplo: "JOÃO PEDRO SILVA SANTOS" vira "JOÃO *** SANTOS"
+ *
+ * @param string $fullName
+ * @return string
+ */
+function maskMiddleNames($fullName) {
+    $parts = explode(' ', trim($fullName));
+    $count = count($parts);
+
+    if ($count <= 2) {
+        // Se tem 1 ou 2 nomes, retorna sem mascarar
+        return $fullName;
+    }
+
+    // Pega o primeiro e o último nome
+    $firstName = $parts[0];
+    $lastName = $parts[$count - 1];
+
+    // Mascara os nomes do meio
+    return $firstName . ' *** ' . $lastName;
+}
