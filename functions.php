@@ -1034,3 +1034,393 @@ function getMonthsInDatabase() {
         return [];
     }
 }
+
+// ===== GESTÃO DE PROMOTORES =====
+
+/**
+ * Importa CSV de promotores para o banco de dados
+ *
+ * @param string $csvFilePath Caminho do arquivo CSV
+ * @param int $userId ID do usuário que está importando
+ * @param bool $replace Se true, substitui todos os dados existentes
+ * @return array
+ */
+function importPromotersCSV($csvFilePath, $userId, $replace = false) {
+    try {
+        if (!file_exists($csvFilePath)) {
+            return ['success' => false, 'message' => 'Arquivo CSV não encontrado!'];
+        }
+
+        $db = Database::getConnection();
+
+        // Se replace = true, deleta todos os promotores existentes
+        if ($replace) {
+            $sql = "DELETE FROM promoters";
+            $deleted = Database::execute($sql);
+
+            // Log de auditoria
+            logAudit($userId, 'delete_all_promoters', 'promoters', null, null, json_encode(['deleted_rows' => $deleted]));
+        }
+
+        // Abre arquivo CSV
+        $handle = fopen($csvFilePath, 'r');
+        if ($handle === FALSE) {
+            return ['success' => false, 'message' => 'Erro ao abrir arquivo CSV!'];
+        }
+
+        // Remove BOM se existir
+        $bom = fread($handle, 3);
+        if ($bom !== "\xEF\xBB\xBF") {
+            rewind($handle);
+        }
+
+        // Detecta delimitador
+        $first_line = fgets($handle);
+        rewind($handle);
+        $bom = fread($handle, 3);
+        if ($bom !== "\xEF\xBB\xBF") {
+            rewind($handle);
+        }
+
+        // Conta ocorrências de delimitadores
+        $tab_count = substr_count($first_line, "\t");
+        $comma_count = substr_count($first_line, ',');
+        $semicolon_count = substr_count($first_line, ';');
+
+        // Escolhe o delimitador mais comum
+        if ($tab_count > $comma_count && $tab_count > $semicolon_count) {
+            $delimiter = "\t";
+        } elseif ($semicolon_count > $comma_count) {
+            $delimiter = ';';
+        } else {
+            $delimiter = ',';
+        }
+
+        error_log("Promoters CSV Import Debug: Delimitador detectado: " . ($delimiter === "\t" ? 'TAB' : $delimiter));
+
+        // Lê headers
+        $headers = fgetcsv($handle, 10000, $delimiter);
+
+        // Debug: Valida headers
+        if (empty($headers) || !is_array($headers)) {
+            error_log("Promoters CSV Import Error: Headers não puderam ser lidos!");
+            fclose($handle);
+            return ['success' => false, 'message' => 'Erro ao ler cabeçalhos do CSV. Verifique o formato do arquivo.'];
+        }
+
+        // Remove espaços e BOM dos headers
+        $headers = array_map(function($header) {
+            return trim(str_replace("\xEF\xBB\xBF", '', $header));
+        }, $headers);
+
+        error_log("Promoters CSV Import Debug: Headers encontrados: " . implode(', ', $headers));
+
+        // Mapeia headers para campos do banco
+        // Esperado: Nome_Promotor, Titulo, Comissão, Status, Documento, Rg, Rua, Numero, Compl, Bairro, Cidade, UF, PostalCode, Celular
+        $headerMap = [
+            'Nome_Promotor' => 'name',
+            'Titulo' => 'title',
+            'Comissão' => 'commission_percentage',
+            'Status' => 'status',
+            'Documento' => 'document',
+            'Rg' => 'rg',
+            'Rua' => 'street',
+            'Numero' => 'number',
+            'Compl' => 'complement',
+            'Bairro' => 'neighborhood',
+            'Cidade' => 'city',
+            'UF' => 'state',
+            'PostalCode' => 'postal_code',
+            'Celular' => 'mobile_phone'
+        ];
+
+        // Prepara SQL para inserção com ON DUPLICATE KEY UPDATE para nomes duplicados
+        $sql = "INSERT INTO promoters (
+            name, title, commission_percentage, status, document,
+            rg, street, number, complement, neighborhood,
+            city, state, postal_code, mobile_phone
+        ) VALUES (
+            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+        ) ON DUPLICATE KEY UPDATE
+            title = VALUES(title),
+            commission_percentage = VALUES(commission_percentage),
+            status = VALUES(status),
+            document = VALUES(document),
+            rg = VALUES(rg),
+            street = VALUES(street),
+            number = VALUES(number),
+            complement = VALUES(complement),
+            neighborhood = VALUES(neighborhood),
+            city = VALUES(city),
+            state = VALUES(state),
+            postal_code = VALUES(postal_code),
+            mobile_phone = VALUES(mobile_phone)";
+
+        $stmt = $db->prepare($sql);
+
+        $imported = 0;
+        $updated = 0;
+        $skipped = 0;
+        $errors = 0;
+
+        // Inicia transação
+        $db->beginTransaction();
+
+        $lineNumber = 1; // Contador de linhas
+
+        while (($row = fgetcsv($handle, 10000, $delimiter)) !== FALSE) {
+            try {
+                $lineNumber++;
+
+                // Debug: Log da primeira linha de dados
+                if ($lineNumber == 2) {
+                    error_log("Promoters CSV Import Debug: Primeira linha - Headers: " . count($headers) . " | Row: " . count($row));
+                    error_log("Promoters CSV Import Debug: Primeiros valores: " . implode(' | ', array_slice($row, 0, 5)));
+                }
+
+                if (count($headers) !== count($row)) {
+                    error_log("Promoters CSV Import Warning: Linha $lineNumber - Headers: " . count($headers) . " | Colunas: " . count($row));
+                    $skipped++;
+                    continue;
+                }
+
+                $data = array_combine($headers, $row);
+
+                // Valida se array_combine funcionou
+                if ($data === false) {
+                    error_log("Promoters CSV Import Error: array_combine falhou na linha $lineNumber");
+                    $skipped++;
+                    continue;
+                }
+
+                // Extrai dados mapeados
+                $name = trim($data['Nome_Promotor'] ?? '');
+
+                // Pula linhas vazias
+                if (empty($name)) {
+                    $skipped++;
+                    continue;
+                }
+
+                $title = trim($data['Titulo'] ?? '');
+                $commission_percentage = floatval(str_replace(',', '.', trim($data['Comissão'] ?? '25.00')));
+                $status = trim($data['Status'] ?? 'Ativo');
+                $document = trim($data['Documento'] ?? '');
+                $rg = trim($data['Rg'] ?? '');
+                $street = trim($data['Rua'] ?? '');
+                $number = trim($data['Numero'] ?? '');
+                $complement = trim($data['Compl'] ?? '');
+                $neighborhood = trim($data['Bairro'] ?? '');
+                $city = trim($data['Cidade'] ?? '');
+                $state = trim($data['UF'] ?? '');
+                $postal_code = trim($data['PostalCode'] ?? '');
+                $mobile_phone = trim($data['Celular'] ?? '');
+
+                // Normaliza status
+                if ($status !== 'Ativo' && $status !== 'Desativado') {
+                    $status = 'Ativo';
+                }
+
+                // Executa inserção
+                $stmt->execute([
+                    $name,
+                    $title,
+                    $commission_percentage,
+                    $status,
+                    $document,
+                    $rg,
+                    $street,
+                    $number,
+                    $complement,
+                    $neighborhood,
+                    $city,
+                    $state,
+                    $postal_code,
+                    $mobile_phone
+                ]);
+
+                $imported++;
+
+            } catch (Exception $e) {
+                error_log("Promoters CSV Import Error linha $lineNumber: " . $e->getMessage());
+                $errors++;
+
+                // Se muitos erros, aborta
+                if ($errors > 10) {
+                    $db->rollBack();
+                    fclose($handle);
+                    return [
+                        'success' => false,
+                        'message' => 'Muitos erros durante a importação. Verifique o formato do arquivo.'
+                    ];
+                }
+            }
+        }
+
+        fclose($handle);
+
+        // Commit da transação
+        $db->commit();
+
+        // Log de auditoria
+        logAudit($userId, 'import_promoters_csv', 'promoters', null, null, json_encode([
+            'file' => basename($csvFilePath),
+            'imported' => $imported,
+            'skipped' => $skipped,
+            'errors' => $errors,
+            'replace_mode' => $replace
+        ]));
+
+        $message = "Importação concluída! ";
+        $message .= "Importados: $imported | ";
+        $message .= "Ignorados: $skipped";
+
+        if ($errors > 0) {
+            $message .= " | Erros: $errors";
+        }
+
+        return [
+            'success' => true,
+            'message' => $message,
+            'stats' => [
+                'imported' => $imported,
+                'skipped' => $skipped,
+                'errors' => $errors
+            ]
+        ];
+
+    } catch (Exception $e) {
+        error_log("Promoters CSV Import Exception: " . $e->getMessage());
+
+        // Rollback em caso de erro
+        try {
+            $db->rollBack();
+        } catch (Exception $rollbackError) {
+            // Ignora erro de rollback se transação não estiver ativa
+        }
+
+        return [
+            'success' => false,
+            'message' => 'Erro ao importar CSV: ' . $e->getMessage()
+        ];
+    }
+}
+
+/**
+ * Lista todos os promotores do banco
+ *
+ * @param bool $activeOnly Se true, retorna apenas promotores ativos
+ * @return array
+ */
+function getAllPromoters($activeOnly = false) {
+    try {
+        $sql = "SELECT * FROM promoters";
+
+        if ($activeOnly) {
+            $sql .= " WHERE status = 'Ativo'";
+        }
+
+        $sql .= " ORDER BY name ASC";
+
+        return Database::fetchAll($sql);
+    } catch (Exception $e) {
+        error_log("Erro ao listar promotores: " . $e->getMessage());
+        return [];
+    }
+}
+
+/**
+ * Busca promotor por nome
+ *
+ * @param string $name
+ * @return array|false
+ */
+function getPromoterByName($name) {
+    try {
+        $sql = "SELECT * FROM promoters WHERE name = ?";
+        return Database::fetchOne($sql, [$name]);
+    } catch (Exception $e) {
+        error_log("Erro ao buscar promotor: " . $e->getMessage());
+        return false;
+    }
+}
+
+/**
+ * Atualiza PIN do promotor
+ *
+ * @param int $promoterId
+ * @param string $pin PIN em texto plano (será hasheado)
+ * @return bool
+ */
+function updatePromoterPIN($promoterId, $pin) {
+    try {
+        $hashedPin = password_hash($pin, PASSWORD_BCRYPT);
+        $sql = "UPDATE promoters SET pin = ?, pin_attempts = 0, pin_last_reset = NULL WHERE id = ?";
+        Database::execute($sql, [$hashedPin, $promoterId]);
+
+        return true;
+    } catch (Exception $e) {
+        error_log("Erro ao atualizar PIN: " . $e->getMessage());
+        return false;
+    }
+}
+
+/**
+ * Verifica PIN do promotor
+ *
+ * @param int $promoterId
+ * @param string $pin
+ * @return bool
+ */
+function verifyPromoterPIN($promoterId, $pin) {
+    try {
+        $sql = "SELECT pin, pin_attempts FROM promoters WHERE id = ?";
+        $promoter = Database::fetchOne($sql, [$promoterId]);
+
+        if (!$promoter || empty($promoter['pin'])) {
+            return false;
+        }
+
+        // Verifica se ultrapassou 3 tentativas
+        if ($promoter['pin_attempts'] >= 3) {
+            // Reseta PIN
+            resetPromoterPIN($promoterId);
+            return false;
+        }
+
+        // Verifica PIN
+        if (password_verify($pin, $promoter['pin'])) {
+            // PIN correto - reseta tentativas
+            $sql = "UPDATE promoters SET pin_attempts = 0 WHERE id = ?";
+            Database::execute($sql, [$promoterId]);
+            return true;
+        } else {
+            // PIN incorreto - incrementa tentativas
+            $sql = "UPDATE promoters SET pin_attempts = pin_attempts + 1 WHERE id = ?";
+            Database::execute($sql, [$promoterId]);
+            return false;
+        }
+
+    } catch (Exception $e) {
+        error_log("Erro ao verificar PIN: " . $e->getMessage());
+        return false;
+    }
+}
+
+/**
+ * Reseta PIN do promotor (após 3 tentativas erradas)
+ *
+ * @param int $promoterId
+ * @return bool
+ */
+function resetPromoterPIN($promoterId) {
+    try {
+        $sql = "UPDATE promoters SET pin = NULL, pin_attempts = 0, pin_last_reset = NOW() WHERE id = ?";
+        Database::execute($sql, [$promoterId]);
+
+        return true;
+    } catch (Exception $e) {
+        error_log("Erro ao resetar PIN: " . $e->getMessage());
+        return false;
+    }
+}
