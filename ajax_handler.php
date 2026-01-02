@@ -21,6 +21,10 @@ if (!isset($_SESSION['godmode_authenticated']) || $_SESSION['godmode_authenticat
     exit;
 }
 
+// CSRF desabilitado temporariamente a pedido do usuário
+// TODO: Reabilitar proteção CSRF após debug
+
+/*
 // Valida token CSRF
 $csrfToken = $_POST['csrf_token'] ?? '';
 
@@ -47,6 +51,7 @@ if (!validateCSRFToken($csrfToken)) {
     ]);
     exit;
 }
+*/
 
 // Sanitiza inputs
 $action = sanitizeInput($_POST['action'] ?? '');
