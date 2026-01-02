@@ -23,8 +23,28 @@ if (!isset($_SESSION['godmode_authenticated']) || $_SESSION['godmode_authenticat
 
 // Valida token CSRF
 $csrfToken = $_POST['csrf_token'] ?? '';
+
+// Debug: Log do erro CSRF
+if (empty($csrfToken)) {
+    error_log("CSRF Debug: Token não foi enviado. Session token: " . ($_SESSION['csrf_token'] ?? 'não existe'));
+}
+
 if (!validateCSRFToken($csrfToken)) {
-    echo json_encode(['success' => false, 'message' => 'Token CSRF inválido']);
+    // Tenta regenerar o token se não existir
+    if (empty($_SESSION['csrf_token'])) {
+        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+        error_log("CSRF Debug: Token regenerado na sessão");
+    }
+
+    error_log("CSRF Debug: Validação falhou. Token recebido: " . $csrfToken . " | Token sessão: " . ($_SESSION['csrf_token'] ?? 'vazio'));
+    echo json_encode([
+        'success' => false,
+        'message' => 'Token CSRF inválido. Por favor, recarregue a página.',
+        'debug' => [
+            'token_received' => !empty($csrfToken),
+            'session_token_exists' => isset($_SESSION['csrf_token'])
+        ]
+    ]);
     exit;
 }
 

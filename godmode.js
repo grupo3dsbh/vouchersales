@@ -135,6 +135,13 @@ function selectAllPayments(markAsPaid) {
     // Pega o token CSRF
     const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
 
+    // Debug: Verifica se o token existe
+    if (!csrfToken) {
+        console.error('Token CSRF não encontrado! Recarregue a página.');
+        alert('Erro de segurança: Token CSRF não encontrado. Por favor, recarregue a página e tente novamente.');
+        return;
+    }
+
     // Processa cada checkbox
     checkboxes.forEach(checkbox => {
         if (checkbox.checked !== markAsPaid) {
@@ -221,6 +228,14 @@ function togglePayment(promoter, month, paid, checkbox) {
 
     // Pega o token CSRF
     const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+
+    // Debug: Verifica se o token existe
+    if (!csrfToken) {
+        console.error('Token CSRF não encontrado! Recarregue a página.');
+        alert('Erro de segurança: Token CSRF não encontrado. Por favor, recarregue a página e tente novamente.');
+        checkbox.disabled = false;
+        return;
+    }
 
     fetch('ajax_handler.php', {
         method: 'POST',

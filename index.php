@@ -49,6 +49,9 @@ if ($godmode_enabled && isset($_POST['godmode_login'])) {
         $_SESSION['godmode_user'] = $user['name'];
         $_SESSION['godmode_username'] = $user['username'];
         $_SESSION['godmode_user_id'] = $user['id'];
+
+        // Regenera token CSRF após login
+        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
     } else {
         $error_msg = 'Usuário ou senha incorretos!';
     }
