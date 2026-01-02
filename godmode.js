@@ -132,20 +132,29 @@ function selectAllPayments(markAsPaid) {
         return;
     }
     
+    // Pega o token CSRF
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+
     // Processa cada checkbox
     checkboxes.forEach(checkbox => {
         if (checkbox.checked !== markAsPaid) {
             const promoter = checkbox.dataset.promoter;
             const month = checkbox.dataset.month;
-            
+
+            // Pega dados do promoter
+            const promoterData = promotersData[promoter];
+            const monthData = promoterData?.months[month] || {};
+            const amount = monthData.commission || 0;
+            const vouchers = monthData.vouchers || 0;
+
             checkbox.disabled = true;
-            
+
             fetch('ajax_handler.php', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded',
                 },
-                body: `action=toggle_payment&promoter=${encodeURIComponent(promoter)}&month=${encodeURIComponent(month)}&paid=${markAsPaid ? '1' : '0'}`
+                body: `action=toggle_payment&promoter=${encodeURIComponent(promoter)}&month=${encodeURIComponent(month)}&paid=${markAsPaid ? '1' : '0'}&amount=${amount}&vouchers=${vouchers}&csrf_token=${encodeURIComponent(csrfToken)}`
             })
             .then(response => response.json())
             .then(data => {
@@ -203,13 +212,22 @@ function togglePaymentConfirm(checkbox, promoter, month) {
 function togglePayment(promoter, month, paid, checkbox) {
     // Desabilita checkbox temporariamente
     checkbox.disabled = true;
-    
+
+    // Pega dados do promoter
+    const promoterData = promotersData[promoter];
+    const monthData = promoterData?.months[month] || {};
+    const amount = monthData.commission || 0;
+    const vouchers = monthData.vouchers || 0;
+
+    // Pega o token CSRF
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+
     fetch('ajax_handler.php', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
         },
-        body: `action=toggle_payment&promoter=${encodeURIComponent(promoter)}&month=${encodeURIComponent(month)}&paid=${paid ? '1' : '0'}`
+        body: `action=toggle_payment&promoter=${encodeURIComponent(promoter)}&month=${encodeURIComponent(month)}&paid=${paid ? '1' : '0'}&amount=${amount}&vouchers=${vouchers}&csrf_token=${encodeURIComponent(csrfToken)}`
     })
     .then(response => response.json())
     .then(data => {

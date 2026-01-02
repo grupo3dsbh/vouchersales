@@ -1,0 +1,36 @@
+# Arquivos de configuração sensíveis
+db_config.php
+config.json
+
+# Dados do sistema
+data/*.csv
+data/*.json
+
+# Logs
+*.log
+error_log
+
+# Sistema operacional
+.DS_Store
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Temporários
+tmp/
+temp/
+cache/
+
+# Backups
+*.bak
+*.backup
+*~
+
+# PHP
+vendor/
+composer.lock

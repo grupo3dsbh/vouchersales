@@ -8,10 +8,25 @@ define('DATA_DIR', __DIR__ . '/data');
 // Inclui funções auxiliares
 require_once 'functions.php';
 
+// Verifica timeout de sessão
+checkSessionTimeout();
+
+// Gera token CSRF
+$csrf_token = generateCSRFToken();
+
 // Carrega configurações
 $config = loadConfig();
-define('ADMIN_PASSWORD', $config['admin_password']);
-define('GODMODE_PASSWORD', $config['godmode_password']);
+
+// Verifica se sistema está instalado
+try {
+    Database::getConnection();
+} catch (Exception $e) {
+    // Redireciona para instalação se banco não estiver configurado
+    if (!defined('INSTALL_MODE')) {
+        header('Location: /admin/install.php');
+        exit;
+    }
+}
 
 if (!file_exists(DATA_DIR)) {
     mkdir(DATA_DIR, 0777, true);
@@ -379,6 +394,7 @@ $is_admin_authenticated = $is_admin_mode && isset($_SESSION['admin_authenticated
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="<?= htmlspecialchars($csrf_token) ?>">
     <title><?= $is_admin_mode ? 'Administração' : 'Minhas Vendas' ?></title>
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
