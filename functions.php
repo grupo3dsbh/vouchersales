@@ -1053,6 +1053,7 @@ function getMonthsInDatabase() {
                     SUM(product_value) as total_value,
                     MAX(imported_at) as last_import
                 FROM sales
+                WHERE campaign_name NOT LIKE '%SITE%'
                 GROUP BY month_reference
                 ORDER BY month_reference DESC";
 
@@ -1783,7 +1784,7 @@ function getPromoterMonthStats($promoterName, $month) {
  */
 function debugMonthData($month) {
     try {
-        // Dados do banco
+        // Dados do banco (filtra "Dayuse SITE")
         $sql = "SELECT
                     COUNT(*) as total_records,
                     COUNT(DISTINCT voucher_code) as unique_vouchers,
@@ -1791,7 +1792,8 @@ function debugMonthData($month) {
                     COUNT(DISTINCT sale_item_id) as unique_sale_items,
                     SUM(product_value) as total_value
                 FROM sales
-                WHERE month_reference = ?";
+                WHERE month_reference = ?
+                    AND campaign_name NOT LIKE '%SITE%'";
 
         $db_data = Database::fetchOne($sql, [$month]);
 
@@ -1804,6 +1806,7 @@ function debugMonthData($month) {
                     SUM(product_value) as total_value
                 FROM sales
                 WHERE month_reference = ?
+                    AND campaign_name NOT LIKE '%SITE%'
                 GROUP BY sale_item_id
                 HAVING count > 1
                 ORDER BY count DESC
@@ -1820,6 +1823,7 @@ function debugMonthData($month) {
                     SUM(product_value) as total_value
                 FROM sales
                 WHERE month_reference = ?
+                    AND campaign_name NOT LIKE '%SITE%'
                 GROUP BY voucher_code
                 HAVING COUNT(DISTINCT sale_item_id) < total_occurrences
                 ORDER BY total_occurrences DESC
@@ -1828,7 +1832,7 @@ function debugMonthData($month) {
         $duplicated_vouchers = Database::fetchAll($sql, [$month]);
 
         // Verifica se há registros com voucher_code vazio ou null
-        $sql = "SELECT COUNT(*) as count FROM sales WHERE month_reference = ? AND (voucher_code IS NULL OR voucher_code = '')";
+        $sql = "SELECT COUNT(*) as count FROM sales WHERE month_reference = ? AND campaign_name NOT LIKE '%SITE%' AND (voucher_code IS NULL OR voucher_code = '')";
         $empty_vouchers = Database::fetchOne($sql, [$month]);
 
         // Conta registros por data de importação
@@ -1838,6 +1842,7 @@ function debugMonthData($month) {
                     COUNT(DISTINCT voucher_code) as unique_vouchers
                 FROM sales
                 WHERE month_reference = ?
+                    AND campaign_name NOT LIKE '%SITE%'
                 GROUP BY DATE(imported_at)
                 ORDER BY import_date DESC";
 
