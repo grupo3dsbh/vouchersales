@@ -117,11 +117,15 @@ if ($selected_month) {
 $data_file = getDataFile($selected_month);
 
 if ($is_admin_mode && isset($_POST['admin_login'])) {
-    if ($_POST['admin_password'] === ADMIN_PASSWORD) {
+    $admin_password = $_POST['admin_password'] ?? '';
+
+    // Tenta autenticar como usuário do banco de dados
+    $user = authenticateUser('admin', $admin_password);
+
+    if ($user) {
         $_SESSION['admin_authenticated'] = true;
-        // Define como admin principal para gestão de usuários
-        $_SESSION['godmode_user_id'] = 1;
-        $_SESSION['godmode_user'] = 'Administrador';
+        $_SESSION['godmode_user_id'] = $user['id'];
+        $_SESSION['godmode_user'] = $user['name'];
         // Recalcula is_main_admin
         $is_main_admin = true;
     } else {
