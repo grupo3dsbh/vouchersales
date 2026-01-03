@@ -1949,7 +1949,7 @@ $is_admin_authenticated = $is_admin_mode && isset($_SESSION['admin_authenticated
                                         <h6 style="color: #333; margin-bottom: 10px;">
                                             <i class="fas fa-database"></i> Dados no Banco de Dados
                                         </h6>
-                                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+                                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px;">
                                             <div style="background: white; padding: 10px; border-radius: 5px; border-left: 4px solid #007bff;">
                                                 <small style="color: #666; display: block;">Total de Registros</small>
                                                 <strong style="font-size: 20px; color: #007bff;">
@@ -1974,6 +1974,18 @@ $is_admin_authenticated = $is_admin_mode && isset($_SESSION['admin_authenticated
                                                     R$ <?= number_format($debug_result['database']['total_value'], 2, ',', '.') ?>
                                                 </strong>
                                             </div>
+                                            <div style="background: white; padding: 10px; border-radius: 5px; border-left: 4px solid #6f42c1;">
+                                                <small style="color: #666; display: block;">Média Itens/Voucher</small>
+                                                <strong style="font-size: 20px; color: #6f42c1;">
+                                                    <?= number_format($debug_result['database']['avg_items_per_voucher'], 2) ?>
+                                                </strong>
+                                            </div>
+                                            <div style="background: white; padding: 10px; border-radius: 5px; border-left: 4px solid #e83e8c;">
+                                                <small style="color: #666; display: block;">Máx Itens/Voucher</small>
+                                                <strong style="font-size: 20px; color: #e83e8c;">
+                                                    <?= number_format($debug_result['database']['max_items_per_voucher']) ?>
+                                                </strong>
+                                            </div>
                                         </div>
                                     </div>
 
@@ -1984,9 +1996,15 @@ $is_admin_authenticated = $is_admin_mode && isset($_SESSION['admin_authenticated
                                         </h6>
                                         <div style="display: flex; gap: 15px;">
                                             <div style="flex: 1;">
-                                                <small style="color: #666;">Duplicatas Encontradas:</small>
-                                                <strong style="display: block; font-size: 24px; color: <?= count($debug_result['issues']['duplicates']) > 0 ? '#dc3545' : '#28a745' ?>;">
-                                                    <?= count($debug_result['issues']['duplicates']) ?>
+                                                <small style="color: #666;">Duplicatas Exatas:</small>
+                                                <strong style="display: block; font-size: 24px; color: <?= count($debug_result['issues']['duplicates_exact']) > 0 ? '#dc3545' : '#28a745' ?>;">
+                                                    <?= count($debug_result['issues']['duplicates_exact']) ?>
+                                                </strong>
+                                            </div>
+                                            <div style="flex: 1;">
+                                                <small style="color: #666;">Vouchers c/ Múltiplos Itens:</small>
+                                                <strong style="display: block; font-size: 24px; color: <?= count($debug_result['issues']['voucher_analysis']) > 0 ? '#ffc107' : '#28a745' ?>;">
+                                                    <?= count($debug_result['issues']['voucher_analysis']) ?>
                                                 </strong>
                                             </div>
                                             <div style="flex: 1;">
@@ -2004,11 +2022,56 @@ $is_admin_authenticated = $is_admin_mode && isset($_SESSION['admin_authenticated
                                         </div>
                                     </div>
 
-                                    <!-- Lista de Duplicatas -->
-                                    <?php if (!empty($debug_result['issues']['duplicates'])): ?>
-                                        <div style="background: #f8d7da; padding: 15px; border-radius: 8px; border: 1px solid #f5c6cb;">
+                                    <!-- Análise de Vouchers com Múltiplos Itens -->
+                                    <?php if (!empty($debug_result['issues']['voucher_analysis'])): ?>
+                                        <div style="background: #d1ecf1; padding: 15px; border-radius: 8px; border: 1px solid #17a2b8; margin-bottom: 15px;">
+                                            <h6 style="color: #0c5460; margin-bottom: 10px;">
+                                                <i class="fas fa-layer-group"></i> Top 20 Vouchers com Múltiplos Itens
+                                            </h6>
+                                            <p style="font-size: 12px; color: #0c5460; margin-bottom: 10px;">
+                                                <strong>Explicação:</strong> Cada voucher pode ter múltiplos produtos/itens (pacotes).
+                                                A divergência acontece porque contamos cada item separadamente, mas o voucher é único.
+                                            </p>
+                                            <div style="max-height: 350px; overflow-y: auto; background: white; padding: 10px; border-radius: 5px;">
+                                                <table style="width: 100%; font-size: 12px;">
+                                                    <thead>
+                                                        <tr style="background: #f8f9fa; border-bottom: 2px solid #dee2e6;">
+                                                            <th style="padding: 8px; text-align: left;">Voucher Code</th>
+                                                            <th style="padding: 8px; text-align: center;">Total Itens</th>
+                                                            <th style="padding: 8px; text-align: center;">Sale IDs Diferentes</th>
+                                                            <th style="padding: 8px; text-align: right;">Valor Total</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        <?php foreach ($debug_result['issues']['voucher_analysis'] as $v): ?>
+                                                            <tr style="border-bottom: 1px solid #dee2e6;">
+                                                                <td style="padding: 8px; font-family: monospace; font-size: 11px;"><?= htmlspecialchars($v['voucher_code']) ?></td>
+                                                                <td style="padding: 8px; text-align: center;">
+                                                                    <span style="background: #17a2b8; color: white; padding: 2px 8px; border-radius: 12px; font-weight: bold;">
+                                                                        <?= $v['total_occurrences'] ?>
+                                                                    </span>
+                                                                </td>
+                                                                <td style="padding: 8px; text-align: center;">
+                                                                    <span style="background: #6c757d; color: white; padding: 2px 8px; border-radius: 12px;">
+                                                                        <?= $v['different_sale_items'] ?>
+                                                                    </span>
+                                                                </td>
+                                                                <td style="padding: 8px; text-align: right; font-weight: bold; color: #ffc107;">
+                                                                    R$ <?= number_format($v['total_value'], 2, ',', '.') ?>
+                                                                </td>
+                                                            </tr>
+                                                        <?php endforeach; ?>
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    <?php endif; ?>
+
+                                    <!-- Lista de Duplicatas Exatas -->
+                                    <?php if (!empty($debug_result['issues']['duplicates_exact'])): ?>
+                                        <div style="background: #f8d7da; padding: 15px; border-radius: 8px; border: 1px solid #f5c6cb; margin-bottom: 15px;">
                                             <h6 style="color: #721c24; margin-bottom: 10px;">
-                                                <i class="fas fa-copy"></i> Top 10 Duplicatas (por quantidade)
+                                                <i class="fas fa-copy"></i> Top 10 Duplicatas Exatas (mesmo Sale ID + Voucher)
                                             </h6>
                                             <div style="max-height: 300px; overflow-y: auto; background: white; padding: 10px; border-radius: 5px;">
                                                 <table style="width: 100%; font-size: 12px;">
@@ -2020,7 +2083,7 @@ $is_admin_authenticated = $is_admin_mode && isset($_SESSION['admin_authenticated
                                                         </tr>
                                                     </thead>
                                                     <tbody>
-                                                        <?php foreach ($debug_result['issues']['duplicates'] as $dup): ?>
+                                                        <?php foreach ($debug_result['issues']['duplicates_exact'] as $dup): ?>
                                                             <tr style="border-bottom: 1px solid #dee2e6;">
                                                                 <td style="padding: 8px; font-family: monospace;"><?= htmlspecialchars($dup['sale_item_id']) ?></td>
                                                                 <td style="padding: 8px; font-family: monospace;"><?= htmlspecialchars($dup['voucher_code']) ?></td>
@@ -2041,18 +2104,33 @@ $is_admin_authenticated = $is_admin_mode && isset($_SESSION['admin_authenticated
                                     <?php endif; ?>
 
                                     <!-- Resumo e Conclusão -->
-                                    <div style="margin-top: 15px; padding: 15px; background: <?= count($debug_result['issues']['duplicates']) > 0 ? '#fff3cd' : '#d4edda' ?>; border-radius: 8px;">
-                                        <?php if (count($debug_result['issues']['duplicates']) > 0): ?>
-                                            <p style="margin: 0; color: #856404;">
-                                                <i class="fas fa-info-circle"></i> <strong>Conclusão:</strong>
-                                                Foram encontradas <strong><?= count($debug_result['issues']['duplicates']) ?> duplicatas</strong> no banco de dados,
-                                                causando divergência de <strong><?= number_format($debug_result['database']['total_records'] - $debug_result['database']['unique_vouchers']) ?> registros</strong>.
+                                    <div style="margin-top: 15px; padding: 15px; background: <?= count($debug_result['issues']['duplicates_exact']) > 0 ? '#fff3cd' : '#d1ecf1' ?>; border-radius: 8px;">
+                                        <?php
+                                        $divergence = $debug_result['database']['total_records'] - $debug_result['database']['unique_vouchers'];
+                                        $has_duplicates = count($debug_result['issues']['duplicates_exact']) > 0;
+                                        $has_multi_items = count($debug_result['issues']['voucher_analysis']) > 0;
+                                        ?>
+
+                                        <?php if ($has_duplicates): ?>
+                                            <p style="margin: 0 0 10px 0; color: #856404;">
+                                                <i class="fas fa-exclamation-circle"></i> <strong>Conclusão:</strong>
+                                                Foram encontradas <strong><?= count($debug_result['issues']['duplicates_exact']) ?> duplicatas exatas</strong> no banco de dados.
                                                 Use a ferramenta "Limpar Duplicatas" para corrigir.
                                             </p>
-                                        <?php else: ?>
+                                        <?php endif; ?>
+
+                                        <?php if ($has_multi_items && $divergence > 0): ?>
+                                            <p style="margin: 0; color: #0c5460;">
+                                                <i class="fas fa-info-circle"></i> <strong>Divergência Explicada:</strong>
+                                                Este mês tem <strong><?= number_format($divergence) ?> registros extras</strong> porque
+                                                <strong><?= count($debug_result['issues']['voucher_analysis']) ?> vouchers</strong> contêm múltiplos produtos/itens.
+                                                A média de <strong><?= number_format($debug_result['database']['avg_items_per_voucher'], 2) ?> itens por voucher</strong> é normal
+                                                quando vendas incluem pacotes com vários produtos. Isto <strong>NÃO É um problema!</strong>
+                                            </p>
+                                        <?php elseif (!$has_duplicates && $divergence == 0): ?>
                                             <p style="margin: 0; color: #155724;">
                                                 <i class="fas fa-check-circle"></i> <strong>Conclusão:</strong>
-                                                Nenhuma duplicata encontrada! Os dados estão consistentes.
+                                                Nenhuma duplicata encontrada e nenhuma divergência! Os dados estão perfeitamente consistentes.
                                             </p>
                                         <?php endif; ?>
                                     </div>

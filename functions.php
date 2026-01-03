@@ -1786,7 +1786,7 @@ function getPromoterMonthStats($promoterName, $month) {
 function debugMonthData($month) {
     try {
         // Dados do banco
-        $sql = "SELECT 
+        $sql = "SELECT
                     COUNT(*) as total_records,
                     COUNT(DISTINCT voucher_code) as unique_vouchers,
                     COUNT(DISTINCT promoter) as unique_promoters,
@@ -1794,13 +1794,13 @@ function debugMonthData($month) {
                     COUNT(DISTINCT CONCAT(sale_item_id, voucher_code)) as unique_sales
                 FROM sales
                 WHERE month_reference = ?";
-        
+
         $db_data = Database::fetchOne($sql, [$month]);
 
-        // Busca duplicatas
-        $sql = "SELECT 
-                    sale_item_id, 
-                    voucher_code, 
+        // Busca duplicatas por sale_item_id + voucher_code
+        $sql = "SELECT
+                    sale_item_id,
+                    voucher_code,
                     COUNT(*) as count
                 FROM sales
                 WHERE month_reference = ?
@@ -1808,12 +1808,42 @@ function debugMonthData($month) {
                 HAVING count > 1
                 ORDER BY count DESC
                 LIMIT 10";
-        
-        $duplicates = Database::fetchAll($sql, [$month]);
+
+        $duplicates_exact = Database::fetchAll($sql, [$month]);
+
+        // NOVO: Busca vouchers que aparecem múltiplas vezes (ignorando sale_item_id)
+        // Isso mostra se um voucher tem múltiplos produtos/itens
+        $sql = "SELECT
+                    voucher_code,
+                    COUNT(*) as total_occurrences,
+                    COUNT(DISTINCT sale_item_id) as different_sale_items,
+                    GROUP_CONCAT(DISTINCT promoter) as promoters,
+                    SUM(product_value) as total_value
+                FROM sales
+                WHERE month_reference = ?
+                GROUP BY voucher_code
+                HAVING total_occurrences > 1
+                ORDER BY total_occurrences DESC
+                LIMIT 20";
+
+        $voucher_analysis = Database::fetchAll($sql, [$month]);
 
         // Verifica se há registros com voucher_code vazio ou null
         $sql = "SELECT COUNT(*) as count FROM sales WHERE month_reference = ? AND (voucher_code IS NULL OR voucher_code = '')";
         $empty_vouchers = Database::fetchOne($sql, [$month]);
+
+        // Estatísticas sobre vouchers com múltiplos itens
+        $sql = "SELECT
+                    AVG(item_count) as avg_items_per_voucher,
+                    MAX(item_count) as max_items_per_voucher
+                FROM (
+                    SELECT voucher_code, COUNT(*) as item_count
+                    FROM sales
+                    WHERE month_reference = ?
+                    GROUP BY voucher_code
+                ) as voucher_stats";
+
+        $voucher_stats = Database::fetchOne($sql, [$month]);
 
         return [
             'month' => $month,
@@ -1822,10 +1852,13 @@ function debugMonthData($month) {
                 'unique_vouchers' => (int)$db_data['unique_vouchers'],
                 'unique_promoters' => (int)$db_data['unique_promoters'],
                 'total_value' => (float)$db_data['total_value'],
-                'unique_sales' => (int)$db_data['unique_sales']
+                'unique_sales' => (int)$db_data['unique_sales'],
+                'avg_items_per_voucher' => (float)$voucher_stats['avg_items_per_voucher'],
+                'max_items_per_voucher' => (int)$voucher_stats['max_items_per_voucher']
             ],
             'issues' => [
-                'duplicates' => $duplicates,
+                'duplicates_exact' => $duplicates_exact,
+                'voucher_analysis' => $voucher_analysis,
                 'empty_vouchers' => (int)$empty_vouchers['count']
             ]
         ];
