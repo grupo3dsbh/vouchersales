@@ -1790,77 +1790,76 @@ function debugMonthData($month) {
                     COUNT(*) as total_records,
                     COUNT(DISTINCT voucher_code) as unique_vouchers,
                     COUNT(DISTINCT promoter) as unique_promoters,
-                    SUM(product_value) as total_value,
-                    COUNT(DISTINCT CONCAT(sale_item_id, voucher_code)) as unique_sales
+                    COUNT(DISTINCT sale_item_id) as unique_sale_items,
+                    SUM(product_value) as total_value
                 FROM sales
                 WHERE month_reference = ?";
 
         $db_data = Database::fetchOne($sql, [$month]);
 
-        // Busca duplicatas por sale_item_id + voucher_code
+        // Busca sale_item_id duplicados (PROBLEMA REAL)
         $sql = "SELECT
                     sale_item_id,
-                    voucher_code,
-                    COUNT(*) as count
+                    COUNT(*) as count,
+                    COUNT(DISTINCT voucher_code) as different_vouchers,
+                    GROUP_CONCAT(DISTINCT voucher_code SEPARATOR ', ') as vouchers,
+                    SUM(product_value) as total_value
                 FROM sales
                 WHERE month_reference = ?
-                GROUP BY sale_item_id, voucher_code
+                GROUP BY sale_item_id
                 HAVING count > 1
                 ORDER BY count DESC
-                LIMIT 10";
+                LIMIT 20";
 
-        $duplicates_exact = Database::fetchAll($sql, [$month]);
+        $duplicated_sale_items = Database::fetchAll($sql, [$month]);
 
-        // NOVO: Busca vouchers que aparecem múltiplas vezes (ignorando sale_item_id)
-        // Isso mostra se um voucher tem múltiplos produtos/itens
+        // Busca vouchers duplicados (mesmo voucher importado múltiplas vezes)
         $sql = "SELECT
                     voucher_code,
                     COUNT(*) as total_occurrences,
                     COUNT(DISTINCT sale_item_id) as different_sale_items,
-                    GROUP_CONCAT(DISTINCT promoter) as promoters,
+                    GROUP_CONCAT(DISTINCT sale_item_id ORDER BY sale_item_id SEPARATOR ', ') as sale_items,
                     SUM(product_value) as total_value
                 FROM sales
                 WHERE month_reference = ?
                 GROUP BY voucher_code
-                HAVING total_occurrences > 1
+                HAVING COUNT(DISTINCT sale_item_id) < total_occurrences
                 ORDER BY total_occurrences DESC
                 LIMIT 20";
 
-        $voucher_analysis = Database::fetchAll($sql, [$month]);
+        $duplicated_vouchers = Database::fetchAll($sql, [$month]);
 
         // Verifica se há registros com voucher_code vazio ou null
         $sql = "SELECT COUNT(*) as count FROM sales WHERE month_reference = ? AND (voucher_code IS NULL OR voucher_code = '')";
         $empty_vouchers = Database::fetchOne($sql, [$month]);
 
-        // Estatísticas sobre vouchers com múltiplos itens
+        // Conta registros por data de importação
         $sql = "SELECT
-                    AVG(item_count) as avg_items_per_voucher,
-                    MAX(item_count) as max_items_per_voucher
-                FROM (
-                    SELECT voucher_code, COUNT(*) as item_count
-                    FROM sales
-                    WHERE month_reference = ?
-                    GROUP BY voucher_code
-                ) as voucher_stats";
+                    DATE(imported_at) as import_date,
+                    COUNT(*) as records_imported,
+                    COUNT(DISTINCT voucher_code) as unique_vouchers
+                FROM sales
+                WHERE month_reference = ?
+                GROUP BY DATE(imported_at)
+                ORDER BY import_date DESC";
 
-        $voucher_stats = Database::fetchOne($sql, [$month]);
+        $import_history = Database::fetchAll($sql, [$month]);
 
         return [
             'month' => $month,
             'database' => [
                 'total_records' => (int)$db_data['total_records'],
                 'unique_vouchers' => (int)$db_data['unique_vouchers'],
+                'unique_sale_items' => (int)$db_data['unique_sale_items'],
                 'unique_promoters' => (int)$db_data['unique_promoters'],
-                'total_value' => (float)$db_data['total_value'],
-                'unique_sales' => (int)$db_data['unique_sales'],
-                'avg_items_per_voucher' => (float)$voucher_stats['avg_items_per_voucher'],
-                'max_items_per_voucher' => (int)$voucher_stats['max_items_per_voucher']
+                'total_value' => (float)$db_data['total_value']
             ],
             'issues' => [
-                'duplicates_exact' => $duplicates_exact,
-                'voucher_analysis' => $voucher_analysis,
+                'duplicated_sale_items' => $duplicated_sale_items,
+                'duplicated_vouchers' => $duplicated_vouchers,
                 'empty_vouchers' => (int)$empty_vouchers['count']
-            ]
+            ],
+            'import_history' => $import_history
         ];
 
     } catch (Exception $e) {
