@@ -1667,7 +1667,7 @@ function maskMiddleNames($fullName) {
  */
 function getPromoterAccumulatedBalance($promoterName, $currentMonth) {
     try {
-        $sql = "SELECT 
+        $sql = "SELECT
                     s.month_reference,
                     COUNT(DISTINCT s.voucher_code) as quantity,
                     SUM(s.product_value) as total,
@@ -1676,7 +1676,7 @@ function getPromoterAccumulatedBalance($promoterName, $currentMonth) {
                     p.paid_by
                 FROM sales s
                 LEFT JOIN payments p ON (s.promoter = p.promoter AND s.month_reference = p.month)
-                WHERE s.promoter = ? 
+                WHERE s.promoter = ?
                     AND s.month_reference < ?
                     AND s.campaign_name NOT LIKE '%SITE%'
                 GROUP BY s.month_reference, p.paid, p.paid_at, p.paid_by
@@ -1692,21 +1692,17 @@ function getPromoterAccumulatedBalance($promoterName, $currentMonth) {
         ];
 
         foreach ($months as $month) {
-            $commission_percentage = 0.25; // 25%
-            
-            // Busca percentual de comissão do promotor no banco
-            $promoter = getPromoterByName($promoterName);
-            if ($promoter && !empty($promoter['commission_percentage'])) {
-                $commission_percentage = $promoter['commission_percentage'] / 100;
-            }
-
-            $commission = $month['total'] * $commission_percentage;
+            // IMPORTANTE: Busca o percentual de comissão ESPECÍFICO daquele mês
+            // Isso permite que cada mês tenha seu próprio percentual
+            $commission_percentage = getPromoterCommissionForMonth($promoterName, $month['month_reference']);
+            $commission = $month['total'] * ($commission_percentage / 100);
 
             $result['months'][] = [
                 'month' => $month['month_reference'],
                 'quantity' => (int)$month['quantity'],
                 'total' => (float)$month['total'],
                 'commission' => $commission,
+                'commission_percentage' => $commission_percentage,
                 'paid' => (bool)$month['paid'],
                 'paid_at' => $month['paid_at'],
                 'paid_by' => $month['paid_by']
@@ -1742,11 +1738,11 @@ function getPromoterAccumulatedBalance($promoterName, $currentMonth) {
  */
 function getPromoterMonthStats($promoterName, $month) {
     try {
-        $sql = "SELECT 
+        $sql = "SELECT
                     COUNT(DISTINCT voucher_code) as quantity,
                     SUM(product_value) as total
                 FROM sales
-                WHERE promoter = ? 
+                WHERE promoter = ?
                     AND month_reference = ?
                     AND campaign_name NOT LIKE '%SITE%'";
 
@@ -1756,22 +1752,19 @@ function getPromoterMonthStats($promoterName, $month) {
             return [
                 'quantity' => 0,
                 'total' => 0,
-                'commission' => 0
+                'commission' => 0,
+                'commission_percentage' => 25.00
             ];
         }
 
-        $commission_percentage = 0.25; // 25%
-        
-        // Busca percentual de comissão do promotor
-        $promoter = getPromoterByName($promoterName);
-        if ($promoter && !empty($promoter['commission_percentage'])) {
-            $commission_percentage = $promoter['commission_percentage'] / 100;
-        }
+        // Busca percentual de comissão ESPECÍFICO deste mês
+        $commission_percentage = getPromoterCommissionForMonth($promoterName, $month);
 
         return [
             'quantity' => (int)$stats['quantity'],
             'total' => (float)$stats['total'],
-            'commission' => (float)$stats['total'] * $commission_percentage
+            'commission' => (float)$stats['total'] * ($commission_percentage / 100),
+            'commission_percentage' => $commission_percentage
         ];
 
     } catch (Exception $e) {
@@ -1781,5 +1774,141 @@ function getPromoterMonthStats($promoterName, $month) {
             'total' => 0,
             'commission' => 0
         ];
+    }
+}
+
+/**
+ * Debug: Compara dados do CSV com dados do banco
+ *
+ * @param string $month Mês no formato YYYY-MM
+ * @return array
+ */
+function debugMonthData($month) {
+    try {
+        // Dados do banco
+        $sql = "SELECT 
+                    COUNT(*) as total_records,
+                    COUNT(DISTINCT voucher_code) as unique_vouchers,
+                    COUNT(DISTINCT promoter) as unique_promoters,
+                    SUM(product_value) as total_value,
+                    COUNT(DISTINCT CONCAT(sale_item_id, voucher_code)) as unique_sales
+                FROM sales
+                WHERE month_reference = ?";
+        
+        $db_data = Database::fetchOne($sql, [$month]);
+
+        // Busca duplicatas
+        $sql = "SELECT 
+                    sale_item_id, 
+                    voucher_code, 
+                    COUNT(*) as count
+                FROM sales
+                WHERE month_reference = ?
+                GROUP BY sale_item_id, voucher_code
+                HAVING count > 1
+                ORDER BY count DESC
+                LIMIT 10";
+        
+        $duplicates = Database::fetchAll($sql, [$month]);
+
+        // Verifica se há registros com voucher_code vazio ou null
+        $sql = "SELECT COUNT(*) as count FROM sales WHERE month_reference = ? AND (voucher_code IS NULL OR voucher_code = '')";
+        $empty_vouchers = Database::fetchOne($sql, [$month]);
+
+        return [
+            'month' => $month,
+            'database' => [
+                'total_records' => (int)$db_data['total_records'],
+                'unique_vouchers' => (int)$db_data['unique_vouchers'],
+                'unique_promoters' => (int)$db_data['unique_promoters'],
+                'total_value' => (float)$db_data['total_value'],
+                'unique_sales' => (int)$db_data['unique_sales']
+            ],
+            'issues' => [
+                'duplicates' => $duplicates,
+                'empty_vouchers' => (int)$empty_vouchers['count']
+            ]
+        ];
+
+    } catch (Exception $e) {
+        error_log("Erro no debug: " . $e->getMessage());
+        return ['error' => $e->getMessage()];
+    }
+}
+
+/**
+ * Armazena percentual de comissão histórico
+ * IMPORTANTE: Chamar esta função sempre que importar um CSV
+ *
+ * @param string $promoterName Nome do promotor
+ * @param string $month Mês (YYYY-MM)
+ * @param float $commissionPercentage Percentual (ex: 25.00 para 25%)
+ * @return bool
+ */
+function savePromoterCommissionHistory($promoterName, $month, $commissionPercentage) {
+    try {
+        // Cria tabela de histórico se não existir
+        $db = Database::getConnection();
+        
+        $sql = "CREATE TABLE IF NOT EXISTS `promoter_commission_history` (
+            `id` INT(11) UNSIGNED NOT NULL AUTO_INCREMENT,
+            `promoter_name` VARCHAR(255) NOT NULL,
+            `month_reference` VARCHAR(7) NOT NULL,
+            `commission_percentage` DECIMAL(5, 2) NOT NULL,
+            `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`),
+            UNIQUE KEY `uk_promoter_month` (`promoter_name`, `month_reference`),
+            INDEX `idx_promoter` (`promoter_name`),
+            INDEX `idx_month` (`month_reference`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
+        
+        $db->exec($sql);
+
+        // Insere ou atualiza
+        $sql = "INSERT INTO promoter_commission_history (promoter_name, month_reference, commission_percentage)
+                VALUES (?, ?, ?)
+                ON DUPLICATE KEY UPDATE commission_percentage = VALUES(commission_percentage)";
+        
+        Database::execute($sql, [$promoterName, $month, $commissionPercentage]);
+
+        return true;
+
+    } catch (Exception $e) {
+        error_log("Erro ao salvar histórico de comissão: " . $e->getMessage());
+        return false;
+    }
+}
+
+/**
+ * Busca percentual de comissão de um promotor em um mês específico
+ *
+ * @param string $promoterName Nome do promotor
+ * @param string $month Mês (YYYY-MM)
+ * @return float Percentual (ex: 25.00)
+ */
+function getPromoterCommissionForMonth($promoterName, $month) {
+    try {
+        // Primeiro tenta buscar do histórico
+        $sql = "SELECT commission_percentage FROM promoter_commission_history
+                WHERE promoter_name = ? AND month_reference = ?";
+        
+        $history = Database::fetchOne($sql, [$promoterName, $month]);
+        
+        if ($history) {
+            return (float)$history['commission_percentage'];
+        }
+
+        // Se não tem histórico, busca do cadastro atual do promotor
+        $promoter = getPromoterByName($promoterName);
+        if ($promoter && !empty($promoter['commission_percentage'])) {
+            return (float)$promoter['commission_percentage'];
+        }
+
+        // Padrão: 25%
+        return 25.00;
+
+    } catch (Exception $e) {
+        error_log("Erro ao buscar comissão do mês: " . $e->getMessage());
+        return 25.00;
     }
 }

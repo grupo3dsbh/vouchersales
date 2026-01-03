@@ -271,6 +271,16 @@ if ($is_admin_mode && isset($_SESSION['admin_authenticated']) && isset($_POST['d
     }
 }
 
+// Debug de dados de um mês específico
+$debug_result = null;
+if ($is_admin_mode && isset($_SESSION['admin_authenticated']) && isset($_POST['debug_month'])) {
+    $month_to_debug = $_POST['month_to_debug'] ?? '';
+
+    if (!empty($month_to_debug)) {
+        $debug_result = debugMonthData($month_to_debug);
+    }
+}
+
 // Upload de CSV de Promotores
 if ($is_admin_mode && isset($_SESSION['admin_authenticated']) && isset($_FILES['promoters_csv_file']) && $_FILES['promoters_csv_file']['error'] == 0) {
     $upload_dir = DATA_DIR . '/';
@@ -1469,6 +1479,7 @@ $is_admin_authenticated = $is_admin_mode && isset($_SESSION['admin_authenticated
                                             <th style="padding: 10px; text-align: left;">Mês</th>
                                             <th style="padding: 10px; text-align: center;">Vouchers</th>
                                             <th style="padding: 10px; text-align: right;">Valor</th>
+                                            <th style="padding: 10px; text-align: center;">%</th>
                                             <th style="padding: 10px; text-align: right;">Comissão</th>
                                             <th style="padding: 10px; text-align: center;">Status</th>
                                         </tr>
@@ -1484,6 +1495,7 @@ $is_admin_authenticated = $is_admin_mode && isset($_SESSION['admin_authenticated
                                                 <td style="padding: 10px; font-weight: bold;"><?= $months_pt[$m] . '/' . $y ?></td>
                                                 <td style="padding: 10px; text-align: center;"><?= $month_data['quantity'] ?></td>
                                                 <td style="padding: 10px; text-align: right;">R$ <?= number_format($month_data['total'], 2, ',', '.') ?></td>
+                                                <td style="padding: 10px; text-align: center; font-weight: bold; color: #ffd700;"><?= number_format($month_data['commission_percentage'], 1) ?>%</td>
                                                 <td style="padding: 10px; text-align: right;">R$ <?= number_format($month_data['commission'], 2, ',', '.') ?></td>
                                                 <td style="padding: 10px; text-align: center;">
                                                     <?php if ($month_data['paid']): ?>
@@ -1893,8 +1905,159 @@ $is_admin_authenticated = $is_admin_mode && isset($_SESSION['admin_authenticated
                                             <i class="fas fa-bomb"></i> Deletar Tudo
                                         </button>
                                     </div>
+
+                                    <!-- Debug de Mês -->
+                                    <div style="background: white; padding: 15px; border-radius: 8px; border: 2px solid #6f42c1;">
+                                        <h6 style="color: #4a2c7b; margin-bottom: 10px;">
+                                            <i class="fas fa-bug"></i> Debug de Divergências
+                                        </h6>
+                                        <p style="font-size: 12px; color: #666; margin-bottom: 10px;">
+                                            Analisa duplicatas e divergências de dados
+                                        </p>
+                                        <form method="POST">
+                                            <select name="month_to_debug" class="form-control" required style="margin-bottom: 10px; font-size: 12px;">
+                                                <option value="">-- Selecione --</option>
+                                                <?php foreach ($months_in_db as $m): ?>
+                                                    <option value="<?= htmlspecialchars($m['month_reference']) ?>">
+                                                        <?php
+                                                        list($y, $mon) = explode('-', $m['month_reference']);
+                                                        $months_pt = ['01' => 'Jan', '02' => 'Fev', '03' => 'Mar', '04' => 'Abr',
+                                                                      '05' => 'Mai', '06' => 'Jun', '07' => 'Jul', '08' => 'Ago',
+                                                                      '09' => 'Set', '10' => 'Out', '11' => 'Nov', '12' => 'Dez'];
+                                                        echo $months_pt[$mon] . '/' . $y;
+                                                        ?>
+                                                    </option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                            <button type="submit" name="debug_month" class="btn btn-sm" style="width: 100%; background: #6f42c1; color: white;">
+                                                <i class="fas fa-search"></i> Analisar Mês
+                                            </button>
+                                        </form>
+                                    </div>
                                 </div>
                             </div>
+
+                            <!-- Resultado do Debug -->
+                            <?php if ($debug_result): ?>
+                                <div style="margin-top: 20px; padding: 20px; background: white; border-radius: 10px; border: 2px solid #6f42c1;">
+                                    <h5 style="color: #4a2c7b; margin-bottom: 15px;">
+                                        <i class="fas fa-chart-line"></i> Análise do Mês: <?= htmlspecialchars($debug_result['month']) ?>
+                                    </h5>
+
+                                    <!-- Estatísticas do Banco de Dados -->
+                                    <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                                        <h6 style="color: #333; margin-bottom: 10px;">
+                                            <i class="fas fa-database"></i> Dados no Banco de Dados
+                                        </h6>
+                                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+                                            <div style="background: white; padding: 10px; border-radius: 5px; border-left: 4px solid #007bff;">
+                                                <small style="color: #666; display: block;">Total de Registros</small>
+                                                <strong style="font-size: 20px; color: #007bff;">
+                                                    <?= number_format($debug_result['database']['total_records']) ?>
+                                                </strong>
+                                            </div>
+                                            <div style="background: white; padding: 10px; border-radius: 5px; border-left: 4px solid #28a745;">
+                                                <small style="color: #666; display: block;">Vouchers Únicos</small>
+                                                <strong style="font-size: 20px; color: #28a745;">
+                                                    <?= number_format($debug_result['database']['unique_vouchers']) ?>
+                                                </strong>
+                                            </div>
+                                            <div style="background: white; padding: 10px; border-radius: 5px; border-left: 4px solid #17a2b8;">
+                                                <small style="color: #666; display: block;">Promotores Únicos</small>
+                                                <strong style="font-size: 20px; color: #17a2b8;">
+                                                    <?= number_format($debug_result['database']['unique_promoters']) ?>
+                                                </strong>
+                                            </div>
+                                            <div style="background: white; padding: 10px; border-radius: 5px; border-left: 4px solid #ffc107;">
+                                                <small style="color: #666; display: block;">Valor Total</small>
+                                                <strong style="font-size: 20px; color: #ffc107;">
+                                                    R$ <?= number_format($debug_result['database']['total_value'], 2, ',', '.') ?>
+                                                </strong>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Problemas Identificados -->
+                                    <div style="background: #fff3cd; padding: 15px; border-radius: 8px; border: 1px solid #ffc107; margin-bottom: 15px;">
+                                        <h6 style="color: #856404; margin-bottom: 10px;">
+                                            <i class="fas fa-exclamation-triangle"></i> Problemas Identificados
+                                        </h6>
+                                        <div style="display: flex; gap: 15px;">
+                                            <div style="flex: 1;">
+                                                <small style="color: #666;">Duplicatas Encontradas:</small>
+                                                <strong style="display: block; font-size: 24px; color: <?= count($debug_result['issues']['duplicates']) > 0 ? '#dc3545' : '#28a745' ?>;">
+                                                    <?= count($debug_result['issues']['duplicates']) ?>
+                                                </strong>
+                                            </div>
+                                            <div style="flex: 1;">
+                                                <small style="color: #666;">Vouchers Vazios:</small>
+                                                <strong style="display: block; font-size: 24px; color: <?= $debug_result['issues']['empty_vouchers'] > 0 ? '#dc3545' : '#28a745' ?>;">
+                                                    <?= number_format($debug_result['issues']['empty_vouchers']) ?>
+                                                </strong>
+                                            </div>
+                                            <div style="flex: 1;">
+                                                <small style="color: #666;">Divergência:</small>
+                                                <strong style="display: block; font-size: 24px; color: <?= ($debug_result['database']['total_records'] - $debug_result['database']['unique_vouchers']) > 0 ? '#dc3545' : '#28a745' ?>;">
+                                                    <?= number_format($debug_result['database']['total_records'] - $debug_result['database']['unique_vouchers']) ?> registros extras
+                                                </strong>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Lista de Duplicatas -->
+                                    <?php if (!empty($debug_result['issues']['duplicates'])): ?>
+                                        <div style="background: #f8d7da; padding: 15px; border-radius: 8px; border: 1px solid #f5c6cb;">
+                                            <h6 style="color: #721c24; margin-bottom: 10px;">
+                                                <i class="fas fa-copy"></i> Top 10 Duplicatas (por quantidade)
+                                            </h6>
+                                            <div style="max-height: 300px; overflow-y: auto; background: white; padding: 10px; border-radius: 5px;">
+                                                <table style="width: 100%; font-size: 12px;">
+                                                    <thead>
+                                                        <tr style="background: #f8f9fa; border-bottom: 2px solid #dee2e6;">
+                                                            <th style="padding: 8px; text-align: left;">Sale Item ID</th>
+                                                            <th style="padding: 8px; text-align: left;">Voucher Code</th>
+                                                            <th style="padding: 8px; text-align: center;">Duplicatas</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        <?php foreach ($debug_result['issues']['duplicates'] as $dup): ?>
+                                                            <tr style="border-bottom: 1px solid #dee2e6;">
+                                                                <td style="padding: 8px; font-family: monospace;"><?= htmlspecialchars($dup['sale_item_id']) ?></td>
+                                                                <td style="padding: 8px; font-family: monospace;"><?= htmlspecialchars($dup['voucher_code']) ?></td>
+                                                                <td style="padding: 8px; text-align: center;">
+                                                                    <span style="background: #dc3545; color: white; padding: 2px 8px; border-radius: 12px; font-weight: bold;">
+                                                                        <?= $dup['count'] ?>
+                                                                    </span>
+                                                                </td>
+                                                            </tr>
+                                                        <?php endforeach; ?>
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                            <p style="margin-top: 10px; color: #721c24; font-size: 13px;">
+                                                <strong>Ação Recomendada:</strong> Use a ferramenta "Limpar Duplicatas" acima para remover os registros duplicados.
+                                            </p>
+                                        </div>
+                                    <?php endif; ?>
+
+                                    <!-- Resumo e Conclusão -->
+                                    <div style="margin-top: 15px; padding: 15px; background: <?= count($debug_result['issues']['duplicates']) > 0 ? '#fff3cd' : '#d4edda' ?>; border-radius: 8px;">
+                                        <?php if (count($debug_result['issues']['duplicates']) > 0): ?>
+                                            <p style="margin: 0; color: #856404;">
+                                                <i class="fas fa-info-circle"></i> <strong>Conclusão:</strong>
+                                                Foram encontradas <strong><?= count($debug_result['issues']['duplicates']) ?> duplicatas</strong> no banco de dados,
+                                                causando divergência de <strong><?= number_format($debug_result['database']['total_records'] - $debug_result['database']['unique_vouchers']) ?> registros</strong>.
+                                                Use a ferramenta "Limpar Duplicatas" para corrigir.
+                                            </p>
+                                        <?php else: ?>
+                                            <p style="margin: 0; color: #155724;">
+                                                <i class="fas fa-check-circle"></i> <strong>Conclusão:</strong>
+                                                Nenhuma duplicata encontrada! Os dados estão consistentes.
+                                            </p>
+                                        <?php endif; ?>
+                                    </div>
+                                </div>
+                            <?php endif; ?>
                         </div>
 
                         <!-- Modal de Confirmação de Deletar Tudo -->
