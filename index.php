@@ -117,10 +117,11 @@ if ($selected_month) {
 $data_file = getDataFile($selected_month);
 
 if ($is_admin_mode && isset($_POST['admin_login'])) {
+    $admin_username = $_POST['admin_username'] ?? '';
     $admin_password = $_POST['admin_password'] ?? '';
 
     // Tenta autenticar como usuário do banco de dados
-    $user = authenticateUser('admin', $admin_password);
+    $user = authenticateUser($admin_username, $admin_password);
 
     if ($user) {
         $_SESSION['admin_authenticated'] = true;
@@ -129,7 +130,7 @@ if ($is_admin_mode && isset($_POST['admin_login'])) {
         // Recalcula is_main_admin
         $is_main_admin = true;
     } else {
-        $error_msg = 'Senha incorreta!';
+        $error_msg = 'Usuário ou senha incorretos!';
     }
 }
 
@@ -1754,8 +1755,12 @@ $is_admin_authenticated = $is_admin_mode && isset($_SESSION['admin_authenticated
                     </h3>
                     <form method="POST">
                         <div class="form-group">
+                            <label>Usuário:</label>
+                            <input type="text" name="admin_username" class="form-control" required autofocus placeholder="Digite o nome de usuário">
+                        </div>
+                        <div class="form-group">
                             <label>Senha:</label>
-                            <input type="password" name="admin_password" class="form-control" required autofocus>
+                            <input type="password" name="admin_password" class="form-control" required placeholder="Digite a senha">
                         </div>
                         <button type="submit" name="admin_login" class="btn btn-danger btn-block">
                             <i class="fas fa-sign-in-alt"></i> Entrar
