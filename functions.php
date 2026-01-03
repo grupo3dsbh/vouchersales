@@ -1045,15 +1045,24 @@ function checkMonthDataInDatabase($monthReference) {
  */
 function getMonthsInDatabase() {
     try {
+        // Busca dados separados por tipo de campanha
         $sql = "SELECT
                     month_reference,
+                    -- Vendas de Promotores (sem SITE)
+                    COUNT(CASE WHEN campaign_name NOT LIKE '%SITE%' THEN 1 END) as promoter_records,
+                    COUNT(DISTINCT CASE WHEN campaign_name NOT LIKE '%SITE%' THEN promoter END) as promoter_count,
+                    COUNT(DISTINCT CASE WHEN campaign_name NOT LIKE '%SITE%' THEN voucher_code END) as promoter_vouchers,
+                    SUM(CASE WHEN campaign_name NOT LIKE '%SITE%' THEN product_value ELSE 0 END) as promoter_value,
+                    -- Vendas do Site (com SITE)
+                    COUNT(CASE WHEN campaign_name LIKE '%SITE%' THEN 1 END) as site_records,
+                    COUNT(DISTINCT CASE WHEN campaign_name LIKE '%SITE%' THEN voucher_code END) as site_vouchers,
+                    SUM(CASE WHEN campaign_name LIKE '%SITE%' THEN product_value ELSE 0 END) as site_value,
+                    -- Totais gerais
                     COUNT(*) as total_records,
-                    COUNT(DISTINCT promoter) as total_promoters,
                     COUNT(DISTINCT voucher_code) as total_vouchers,
                     SUM(product_value) as total_value,
                     MAX(imported_at) as last_import
                 FROM sales
-                WHERE campaign_name NOT LIKE '%SITE%'
                 GROUP BY month_reference
                 ORDER BY month_reference DESC";
 

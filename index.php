@@ -1842,14 +1842,78 @@ $is_admin_authenticated = $is_admin_mode && isset($_SESSION['admin_authenticated
                                         <div style="font-weight: bold; color: #333; font-size: 16px; margin-bottom: 10px;">
                                             <i class="fas fa-calendar-check"></i> <?= htmlspecialchars($month_label) ?>
                                         </div>
-                                        <div style="font-size: 12px; color: #666; display: grid; gap: 5px;">
-                                            <div><i class="fas fa-file-alt"></i> <?= number_format($month_db['total_records']) ?> registros</div>
-                                            <div><i class="fas fa-users"></i> <?= $month_db['total_promoters'] ?> consultores</div>
-                                            <div><i class="fas fa-ticket-alt"></i> <?= number_format($month_db['total_vouchers']) ?> vouchers</div>
-                                            <div><i class="fas fa-dollar-sign"></i> R$ <?= number_format($month_db['total_value'], 2, ',', '.') ?></div>
-                                            <div style="margin-top: 5px; padding-top: 5px; border-top: 1px solid #ddd;">
-                                                <i class="fas fa-clock"></i> <?= date('d/m/Y H:i', strtotime($month_db['last_import'])) ?>
+
+                                        <!-- Vendas de Promotores -->
+                                        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 12px; border-radius: 6px; margin-bottom: 10px; color: white;">
+                                            <div style="font-size: 11px; opacity: 0.9; margin-bottom: 5px; font-weight: 600;">
+                                                <i class="fas fa-users"></i> VENDAS DE CONSULTORES
                                             </div>
+                                            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; font-size: 11px;">
+                                                <div>
+                                                    <span style="opacity: 0.8;">Registros:</span>
+                                                    <strong style="display: block; font-size: 16px;"><?= number_format($month_db['promoter_records']) ?></strong>
+                                                </div>
+                                                <div>
+                                                    <span style="opacity: 0.8;">Vouchers:</span>
+                                                    <strong style="display: block; font-size: 16px;"><?= number_format($month_db['promoter_vouchers']) ?></strong>
+                                                </div>
+                                                <div>
+                                                    <span style="opacity: 0.8;">Consultores:</span>
+                                                    <strong style="display: block; font-size: 16px;"><?= $month_db['promoter_count'] ?></strong>
+                                                </div>
+                                                <div>
+                                                    <span style="opacity: 0.8;">Valor:</span>
+                                                    <strong style="display: block; font-size: 14px;">R$ <?= number_format($month_db['promoter_value'], 2, ',', '.') ?></strong>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <!-- Vendas do Site -->
+                                        <?php if ($month_db['site_records'] > 0): ?>
+                                        <div style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); padding: 12px; border-radius: 6px; margin-bottom: 10px; color: white;">
+                                            <div style="font-size: 11px; opacity: 0.9; margin-bottom: 5px; font-weight: 600;">
+                                                <i class="fas fa-globe"></i> VENDAS DO SITE (sem promotor)
+                                            </div>
+                                            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; font-size: 11px;">
+                                                <div>
+                                                    <span style="opacity: 0.8;">Registros:</span>
+                                                    <strong style="display: block; font-size: 16px;"><?= number_format($month_db['site_records']) ?></strong>
+                                                </div>
+                                                <div>
+                                                    <span style="opacity: 0.8;">Vouchers:</span>
+                                                    <strong style="display: block; font-size: 16px;"><?= number_format($month_db['site_vouchers']) ?></strong>
+                                                </div>
+                                                <div colspan="2">
+                                                    <span style="opacity: 0.8;">Valor:</span>
+                                                    <strong style="display: block; font-size: 14px;">R$ <?= number_format($month_db['site_value'], 2, ',', '.') ?></strong>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <?php endif; ?>
+
+                                        <!-- Total Geral -->
+                                        <div style="background: #f8f9fa; padding: 10px; border-radius: 6px; border: 2px dashed #667eea;">
+                                            <div style="font-size: 11px; color: #667eea; font-weight: 600; margin-bottom: 5px;">
+                                                <i class="fas fa-calculator"></i> TOTAL GERAL
+                                            </div>
+                                            <div style="font-size: 12px; color: #333; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+                                                <div>
+                                                    <span style="opacity: 0.7;">Registros:</span>
+                                                    <strong><?= number_format($month_db['total_records']) ?></strong>
+                                                </div>
+                                                <div>
+                                                    <span style="opacity: 0.7;">Vouchers:</span>
+                                                    <strong><?= number_format($month_db['total_vouchers']) ?></strong>
+                                                </div>
+                                                <div style="flex-basis: 100%;">
+                                                    <span style="opacity: 0.7;">Valor Total:</span>
+                                                    <strong style="color: #667eea; font-size: 16px;">R$ <?= number_format($month_db['total_value'], 2, ',', '.') ?></strong>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #ddd; font-size: 11px; color: #999;">
+                                            <i class="fas fa-clock"></i> <?= date('d/m/Y H:i', strtotime($month_db['last_import'])) ?>
                                         </div>
                                     </div>
                                 <?php endforeach; ?>
