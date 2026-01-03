@@ -1954,75 +1954,73 @@ $is_admin_authenticated = $is_admin_mode && isset($_SESSION['admin_authenticated
                                     </h5>
 
                                     <!-- Estatísticas do Banco de Dados -->
-                                    <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
-                                        <h6 style="color: #333; margin-bottom: 10px;">
-                                            <i class="fas fa-database"></i> Dados no Banco de Dados MySQL
+                                    <?php
+                                    $divergence_records = $debug_result['database']['total_records'] - $debug_result['database']['unique_sale_items'];
+                                    $has_duplicates = !empty($debug_result['issues']['duplicated_sale_items']);
+                                    ?>
+                                    <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 20px; border-radius: 10px; margin-bottom: 20px; color: white; box-shadow: 0 10px 25px rgba(102,126,234,0.3);">
+                                        <h6 style="margin-bottom: 15px; font-size: 18px; font-weight: bold;">
+                                            <i class="fas fa-database"></i> Dados do Banco MySQL (<?= htmlspecialchars($debug_result['month']) ?>)
                                         </h6>
-                                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px;">
-                                            <div style="background: white; padding: 10px; border-radius: 5px; border-left: 4px solid #007bff;">
-                                                <small style="color: #666; display: block;">Total de Registros</small>
-                                                <strong style="font-size: 20px; color: #007bff;">
+                                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px; margin-bottom: 15px;">
+                                            <div style="background: rgba(255,255,255,0.15); padding: 15px; border-radius: 8px; backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.2);">
+                                                <small style="display: block; opacity: 0.9; margin-bottom: 5px; font-size: 12px;">Total de Registros</small>
+                                                <strong style="font-size: 28px; display: block; font-weight: 700;">
                                                     <?= number_format($debug_result['database']['total_records']) ?>
                                                 </strong>
                                             </div>
-                                            <div style="background: white; padding: 10px; border-radius: 5px; border-left: 4px solid #28a745;">
-                                                <small style="color: #666; display: block;">Vouchers Únicos</small>
-                                                <strong style="font-size: 20px; color: #28a745;">
+                                            <div style="background: rgba(255,255,255,0.15); padding: 15px; border-radius: 8px; backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.2);">
+                                                <small style="display: block; opacity: 0.9; margin-bottom: 5px; font-size: 12px;">Vouchers Únicos</small>
+                                                <strong style="font-size: 28px; display: block; font-weight: 700;">
                                                     <?= number_format($debug_result['database']['unique_vouchers']) ?>
                                                 </strong>
                                             </div>
-                                            <div style="background: white; padding: 10px; border-radius: 5px; border-left: 4px solid #6f42c1;">
-                                                <small style="color: #666; display: block;">Sale Items Únicos</small>
-                                                <strong style="font-size: 20px; color: #6f42c1;">
+                                            <div style="background: rgba(255,255,255,0.15); padding: 15px; border-radius: 8px; backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.2);">
+                                                <small style="display: block; opacity: 0.9; margin-bottom: 5px; font-size: 12px;">Sale Items Únicos</small>
+                                                <strong style="font-size: 28px; display: block; font-weight: 700;">
                                                     <?= number_format($debug_result['database']['unique_sale_items']) ?>
                                                 </strong>
                                             </div>
-                                            <div style="background: white; padding: 10px; border-radius: 5px; border-left: 4px solid #17a2b8;">
-                                                <small style="color: #666; display: block;">Promotores Únicos</small>
-                                                <strong style="font-size: 20px; color: #17a2b8;">
+                                            <div style="background: rgba(255,255,255,0.15); padding: 15px; border-radius: 8px; backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.2);">
+                                                <small style="display: block; opacity: 0.9; margin-bottom: 5px; font-size: 12px;">Promotores</small>
+                                                <strong style="font-size: 28px; display: block; font-weight: 700;">
                                                     <?= number_format($debug_result['database']['unique_promoters']) ?>
                                                 </strong>
                                             </div>
-                                            <div style="background: white; padding: 10px; border-radius: 5px; border-left: 4px solid #ffc107;">
-                                                <small style="color: #666; display: block;">Valor Total</small>
-                                                <strong style="font-size: 20px; color: #ffc107;">
+                                            <div style="background: rgba(255,255,255,0.15); padding: 15px; border-radius: 8px; backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.2);">
+                                                <small style="display: block; opacity: 0.9; margin-bottom: 5px; font-size: 12px;">Valor Total</small>
+                                                <strong style="font-size: 22px; display: block; font-weight: 700;">
                                                     R$ <?= number_format($debug_result['database']['total_value'], 2, ',', '.') ?>
                                                 </strong>
                                             </div>
                                         </div>
-                                    </div>
-
-                                    <!-- Comparação com CSV -->
-                                    <div style="background: #fff3cd; padding: 15px; border-radius: 8px; border: 2px solid #ffc107; margin-bottom: 20px;">
-                                        <h6 style="color: #856404; margin-bottom: 15px;">
-                                            <i class="fas fa-exclamation-triangle"></i> Cole aqui os dados do CSV para comparar
-                                        </h6>
-                                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; margin-bottom: 15px;">
-                                            <div>
-                                                <label style="font-weight: bold; color: #666; display: block; margin-bottom: 5px;">Total Ingressos (CSV):</label>
-                                                <div style="color: #333; font-size: 18px; font-weight: bold;">
-                                                    4.003
+                                        <?php if ($has_duplicates): ?>
+                                            <div style="background: rgba(255,59,48,1); padding: 18px; border-radius: 8px; border: 2px solid #fff; box-shadow: 0 4px 15px rgba(0,0,0,0.2);">
+                                                <div style="display: flex; align-items: center; gap: 10px;">
+                                                    <i class="fas fa-exclamation-triangle" style="font-size: 24px;"></i>
+                                                    <div style="flex: 1;">
+                                                        <strong style="font-size: 16px; display: block; margin-bottom: 5px;">DUPLICATAS ENCONTRADAS!</strong>
+                                                        <span style="font-size: 14px; opacity: 0.95;">
+                                                            Há <strong><?= number_format($divergence_records) ?> registros duplicados</strong> no banco.
+                                                            <?= number_format(count($debug_result['issues']['duplicated_sale_items'])) ?> Sale Item IDs estão repetidos.
+                                                            Use "Limpar Duplicatas" para corrigir.
+                                                        </span>
+                                                    </div>
                                                 </div>
                                             </div>
-                                            <div>
-                                                <label style="font-weight: bold; color: #666; display: block; margin-bottom: 5px;">Total Vouchers (CSV):</label>
-                                                <div style="color: #333; font-size: 18px; font-weight: bold;">
-                                                    2.524
+                                        <?php else: ?>
+                                            <div style="background: rgba(52,199,89,1); padding: 18px; border-radius: 8px; border: 2px solid #fff; box-shadow: 0 4px 15px rgba(0,0,0,0.2);">
+                                                <div style="display: flex; align-items: center; gap: 10px;">
+                                                    <i class="fas fa-check-circle" style="font-size: 24px;"></i>
+                                                    <div style="flex: 1;">
+                                                        <strong style="font-size: 16px; display: block; margin-bottom: 5px;">DADOS CONSISTENTES!</strong>
+                                                        <span style="font-size: 14px; opacity: 0.95;">
+                                                            Nenhuma duplicata encontrada. Total de registros = Total de Sale Items únicos.
+                                                        </span>
+                                                    </div>
                                                 </div>
                                             </div>
-                                            <div>
-                                                <label style="font-weight: bold; color: #666; display: block; margin-bottom: 5px;">Total Valor (CSV):</label>
-                                                <div style="color: #333; font-size: 18px; font-weight: bold;">
-                                                    R$ 497.350,00
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <div style="background: #dc3545; color: white; padding: 15px; border-radius: 5px;">
-                                            <strong>⚠️ DIVERGÊNCIAS ENCONTRADAS:</strong><br>
-                                            • Registros: <strong>+<?= number_format($debug_result['database']['total_records'] - 4003) ?></strong> no MySQL (<?= number_format($debug_result['database']['total_records']) ?> vs 4.003)<br>
-                                            • Vouchers: <strong>+<?= number_format($debug_result['database']['unique_vouchers'] - 2524) ?></strong> no MySQL (<?= number_format($debug_result['database']['unique_vouchers']) ?> vs 2.524)<br>
-                                            • Valor: <strong>+R$ <?= number_format($debug_result['database']['total_value'] - 497350, 2, ',', '.') ?></strong> no MySQL
-                                        </div>
+                                        <?php endif; ?>
                                     </div>
 
                                     <!-- Histórico de Importação -->
@@ -2136,18 +2134,32 @@ $is_admin_authenticated = $is_admin_mode && isset($_SESSION['admin_authenticated
                                     <?php endif; ?>
 
                                     <!-- Conclusão Final -->
-                                    <div style="margin-top: 15px; padding: 20px; background: #dc3545; color: white; border-radius: 8px;">
-                                        <h6 style="margin-bottom: 10px;"><i class="fas fa-exclamation-triangle"></i> CONCLUSÃO:</h6>
-                                        <p style="margin: 0; font-size: 14px; line-height: 1.6;">
-                                            O banco de dados MySQL tem <strong>+<?= number_format($debug_result['database']['total_records'] - 4003) ?> registros</strong> e
-                                            <strong>+<?= number_format($debug_result['database']['unique_vouchers'] - 2524) ?> vouchers</strong> a mais que o CSV original.
-                                            <br><br>
-                                            <strong>Causa provável:</strong> O arquivo CSV foi importado <strong><?= count($debug_result['import_history']) ?> vez(es)</strong>,
-                                            criando registros duplicados antes do UNIQUE KEY ser implementado.
-                                            <br><br>
-                                            <strong>Solução:</strong> Use o botão "Limpar Duplicatas" para remover os registros extras e deixar o banco igual ao CSV.
-                                        </p>
-                                    </div>
+                                    <?php if ($has_duplicates): ?>
+                                        <div style="margin-top: 15px; padding: 20px; background: #dc3545; color: white; border-radius: 8px; box-shadow: 0 4px 15px rgba(220,53,69,0.3);">
+                                            <h6 style="margin-bottom: 10px;"><i class="fas fa-exclamation-triangle"></i> AÇÃO NECESSÁRIA:</h6>
+                                            <p style="margin: 0; font-size: 14px; line-height: 1.6;">
+                                                O banco de dados possui <strong><?= number_format($divergence_records) ?> registros duplicados</strong>.
+                                                <br>
+                                                Total atual: <strong><?= number_format($debug_result['database']['total_records']) ?> registros</strong>, mas deveria ter apenas <strong><?= number_format($debug_result['database']['unique_sale_items']) ?> (Sale Items únicos)</strong>.
+                                                <br><br>
+                                                <strong>Causa provável:</strong> O arquivo CSV foi importado <strong><?= count($debug_result['import_history']) ?> vez(es)</strong>,
+                                                criando registros duplicados antes do UNIQUE KEY ser implementado.
+                                                <br><br>
+                                                <strong>Solução:</strong> Use o botão "Limpar Duplicatas" acima para remover os <strong><?= number_format($divergence_records) ?> registros duplicados</strong>.
+                                            </p>
+                                        </div>
+                                    <?php else: ?>
+                                        <div style="margin-top: 15px; padding: 20px; background: #28a745; color: white; border-radius: 8px; box-shadow: 0 4px 15px rgba(40,167,69,0.3);">
+                                            <h6 style="margin-bottom: 10px;"><i class="fas fa-check-circle"></i> BANCO DE DADOS LIMPO:</h6>
+                                            <p style="margin: 0; font-size: 14px; line-height: 1.6;">
+                                                O banco de dados está consistente! Não há duplicatas.
+                                                <br>
+                                                Total de registros (<strong><?= number_format($debug_result['database']['total_records']) ?></strong>) = Sale Items únicos (<strong><?= number_format($debug_result['database']['unique_sale_items']) ?></strong>).
+                                                <br><br>
+                                                O arquivo CSV foi importado <strong><?= count($debug_result['import_history']) ?> vez(es)</strong>, e o sistema está funcionando corretamente.
+                                            </p>
+                                        </div>
+                                    <?php endif; ?>
                                 </div>
                             <?php endif; ?>
                         </div>

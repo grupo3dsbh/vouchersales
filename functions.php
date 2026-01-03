@@ -1065,7 +1065,7 @@ function getMonthsInDatabase() {
 
 /**
  * Remove duplicatas da tabela sales
- * Mantém apenas o registro mais recente de cada sale_item_id + voucher_code
+ * Mantém apenas o registro mais recente de cada sale_item_id
  *
  * @param int $userId ID do usuário executando a ação
  * @return array
@@ -1074,10 +1074,10 @@ function removeDuplicateSales($userId) {
     try {
         $db = Database::getConnection();
 
-        // Primeiro, identifica duplicatas
-        $sql = "SELECT sale_item_id, voucher_code, COUNT(*) as count
+        // Primeiro, identifica sale_item_id duplicados
+        $sql = "SELECT sale_item_id, COUNT(*) as count
                 FROM sales
-                GROUP BY sale_item_id, voucher_code
+                GROUP BY sale_item_id
                 HAVING count > 1";
 
         $duplicates = Database::fetchAll($sql);
@@ -1095,23 +1095,21 @@ function removeDuplicateSales($userId) {
         $total_removed = 0;
 
         foreach ($duplicates as $dup) {
-            // Para cada duplicata, mantém apenas o registro mais recente (maior id)
+            // Para cada sale_item_id duplicado, mantém apenas o registro mais recente (maior id)
             $sql = "DELETE FROM sales
-                    WHERE sale_item_id = ? AND voucher_code = ?
+                    WHERE sale_item_id = ?
                     AND id NOT IN (
                         SELECT * FROM (
                             SELECT MAX(id)
                             FROM sales
-                            WHERE sale_item_id = ? AND voucher_code = ?
+                            WHERE sale_item_id = ?
                         ) AS temp
                     )";
 
             $stmt = $db->prepare($sql);
             $stmt->execute([
                 $dup['sale_item_id'],
-                $dup['voucher_code'],
-                $dup['sale_item_id'],
-                $dup['voucher_code']
+                $dup['sale_item_id']
             ]);
 
             $total_removed += $stmt->rowCount();
@@ -1127,7 +1125,7 @@ function removeDuplicateSales($userId) {
 
         return [
             'success' => true,
-            'message' => "Removidas $total_removed duplicatas! " . count($duplicates) . " conjuntos de duplicatas foram limpos.",
+            'message' => "Removidas $total_removed duplicatas! " . count($duplicates) . " Sale Item IDs duplicados foram limpos.",
             'removed' => $total_removed
         ];
 
