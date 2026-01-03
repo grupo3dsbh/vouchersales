@@ -49,21 +49,63 @@ try {
     // 1. ANÁLISE ATUAL
     echo "<h2>📊 1. Análise Atual do Banco</h2>";
 
-    // Verifica UNIQUE KEY atual
-    $sql = "SHOW INDEX FROM sales WHERE Key_name = 'uk_sale_voucher'";
-    $indexes = $db->query($sql)->fetchAll(PDO::FETCH_ASSOC);
+    // Verifica TODOS os índices UNIQUE da tabela
+    $sql = "SHOW INDEX FROM sales WHERE Non_unique = 0 AND Key_name != 'PRIMARY'";
+    $all_indexes = $db->query($sql)->fetchAll(PDO::FETCH_ASSOC);
 
-    if (!empty($indexes)) {
-        echo "<div class='alert alert-danger'>";
-        echo "<strong>❌ PROBLEMA CONFIRMADO!</strong><br>";
-        echo "UNIQUE KEY atual: <code>uk_sale_voucher</code> composta por:<br>";
-        echo "<ul>";
-        foreach ($indexes as $idx) {
-            echo "<li><code>" . $idx['Column_name'] . "</code></li>";
-        }
-        echo "</ul>";
-        echo "Isso permite que o mesmo <code>sale_item_id</code> seja inserido múltiplas vezes!";
+    echo "<h3>🔍 Índices UNIQUE encontrados:</h3>";
+
+    if (empty($all_indexes)) {
+        echo "<div class='alert alert-warning'>";
+        echo "<strong>⚠️ Nenhum índice UNIQUE encontrado!</strong><br>";
+        echo "A tabela não tem proteção contra duplicatas.";
         echo "</div>";
+        $current_unique_key = null;
+    } else {
+        echo "<table>";
+        echo "<tr><th>Nome do Índice</th><th>Coluna</th><th>Sequência</th></tr>";
+
+        $unique_keys = [];
+        foreach ($all_indexes as $idx) {
+            echo "<tr>";
+            echo "<td><code>" . $idx['Key_name'] . "</code></td>";
+            echo "<td><code>" . $idx['Column_name'] . "</code></td>";
+            echo "<td>" . $idx['Seq_in_index'] . "</td>";
+            echo "</tr>";
+
+            if (!isset($unique_keys[$idx['Key_name']])) {
+                $unique_keys[$idx['Key_name']] = [];
+            }
+            $unique_keys[$idx['Key_name']][] = $idx['Column_name'];
+        }
+        echo "</table>";
+
+        // Encontra a UNIQUE KEY que contém sale_item_id
+        $current_unique_key = null;
+        foreach ($unique_keys as $key_name => $columns) {
+            if (in_array('sale_item_id', $columns)) {
+                $current_unique_key = $key_name;
+
+                echo "<div class='alert alert-" . (count($columns) > 1 ? 'danger' : 'success') . "'>";
+                if (count($columns) > 1) {
+                    echo "<strong>❌ PROBLEMA CONFIRMADO!</strong><br>";
+                    echo "UNIQUE KEY <code>$key_name</code> está composta por: <code>" . implode(', ', $columns) . "</code><br>";
+                    echo "Isso permite que o mesmo <code>sale_item_id</code> seja inserido múltiplas vezes!";
+                } else {
+                    echo "<strong>✅ UNIQUE KEY CORRETA!</strong><br>";
+                    echo "UNIQUE KEY <code>$key_name</code> protege apenas <code>sale_item_id</code>";
+                }
+                echo "</div>";
+                break;
+            }
+        }
+
+        if ($current_unique_key === null) {
+            echo "<div class='alert alert-warning'>";
+            echo "<strong>⚠️ NENHUMA UNIQUE KEY encontrada para sale_item_id!</strong><br>";
+            echo "A tabela não tem proteção contra duplicatas de sale_item_id.";
+            echo "</div>";
+        }
     }
 
     // Conta duplicatas por mês
@@ -182,19 +224,64 @@ try {
 
             echo "<div class='alert alert-success'>✅ Removidas <strong>$removed</strong> duplicatas!</div>";
 
-            // Passo 2: Remover UNIQUE KEY antiga
-            echo "<p><strong>Passo 2:</strong> Removendo UNIQUE KEY antiga...</p>";
+            // Passo 2: Remover UNIQUE KEY antiga (se existir e estiver errada)
+            echo "<p><strong>Passo 2:</strong> Verificando UNIQUE KEY atual...</p>";
 
-            $db->exec("ALTER TABLE sales DROP INDEX uk_sale_voucher");
+            // Verifica qual UNIQUE KEY existe
+            $sql = "SHOW INDEX FROM sales WHERE Non_unique = 0 AND Key_name != 'PRIMARY'";
+            $all_indexes = $db->query($sql)->fetchAll(PDO::FETCH_ASSOC);
 
-            echo "<div class='alert alert-success'>✅ UNIQUE KEY antiga removida!</div>";
+            $unique_keys = [];
+            foreach ($all_indexes as $idx) {
+                if (!isset($unique_keys[$idx['Key_name']])) {
+                    $unique_keys[$idx['Key_name']] = [];
+                }
+                $unique_keys[$idx['Key_name']][] = $idx['Column_name'];
+            }
 
-            // Passo 3: Criar UNIQUE KEY correta
+            $current_unique_key = null;
+            $is_composite = false;
+
+            foreach ($unique_keys as $key_name => $columns) {
+                if (in_array('sale_item_id', $columns)) {
+                    $current_unique_key = $key_name;
+                    $is_composite = count($columns) > 1;
+                    break;
+                }
+            }
+
+            if ($current_unique_key !== null) {
+                if ($is_composite) {
+                    // Remove apenas se for composta (errada)
+                    echo "<p>Removendo UNIQUE KEY composta: <code>$current_unique_key</code>...</p>";
+                    $db->exec("ALTER TABLE sales DROP INDEX `$current_unique_key`");
+                    echo "<div class='alert alert-success'>✅ UNIQUE KEY antiga removida!</div>";
+                } else {
+                    // Já está correta
+                    echo "<div class='alert alert-info'>ℹ️ UNIQUE KEY já está correta: <code>$current_unique_key (sale_item_id)</code>. Pulando...</div>";
+                    $current_unique_key = null; // Não precisa criar nova
+                }
+            } else {
+                echo "<div class='alert alert-info'>ℹ️ Nenhuma UNIQUE KEY encontrada. Criando nova...</div>";
+            }
+
+            // Passo 3: Criar UNIQUE KEY correta (apenas se necessário)
             echo "<p><strong>Passo 3:</strong> Criando UNIQUE KEY correta...</p>";
 
-            $db->exec("ALTER TABLE sales ADD UNIQUE KEY uk_sale_item (sale_item_id)");
+            if ($current_unique_key === null || $is_composite) {
+                // Verifica se uk_sale_item já existe
+                $sql = "SHOW INDEX FROM sales WHERE Key_name = 'uk_sale_item'";
+                $exists = $db->query($sql)->fetch();
 
-            echo "<div class='alert alert-success'>✅ Nova UNIQUE KEY criada: <code>uk_sale_item (sale_item_id)</code></div>";
+                if (!$exists) {
+                    $db->exec("ALTER TABLE sales ADD UNIQUE KEY uk_sale_item (sale_item_id)");
+                    echo "<div class='alert alert-success'>✅ Nova UNIQUE KEY criada: <code>uk_sale_item (sale_item_id)</code></div>";
+                } else {
+                    echo "<div class='alert alert-info'>ℹ️ UNIQUE KEY <code>uk_sale_item</code> já existe!</div>";
+                }
+            } else {
+                echo "<div class='alert alert-info'>ℹ️ UNIQUE KEY correta já está configurada. Nada a fazer.</div>";
+            }
 
             $db->commit();
 
