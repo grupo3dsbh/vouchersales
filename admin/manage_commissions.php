@@ -58,7 +58,10 @@ if (isset($_POST['save_commission'])) {
     $type = $_POST['commission_type'] ?? 'percentage';
     $value = floatval($_POST['commission_value'] ?? 0);
 
-    if (!empty($promoter) && !empty($month) && $value > 0) {
+    // Permite "TODOS" (promoter vazio significa NULL = comissão geral)
+    $promoterName = ($promoter === 'TODOS' || empty($promoter)) ? null : $promoter;
+
+    if (!empty($month) && $value > 0) {
         try {
             $sql = "INSERT INTO promoter_commission_history (promoter_name, month_reference, commission_type, commission_value)
                     VALUES (?, ?, ?, ?)
@@ -66,14 +69,18 @@ if (isset($_POST['save_commission'])) {
                         commission_type = VALUES(commission_type),
                         commission_value = VALUES(commission_value)";
             $stmt = $db->prepare($sql);
-            $stmt->execute([$promoter, $month, $type, $value]);
+            $stmt->execute([$promoterName, $month, $type, $value]);
 
-            $success_msg = "Comissão salva com sucesso!";
+            if ($promoterName === null) {
+                $success_msg = "Comissão GERAL salva com sucesso! Todos os consultores usarão esta comissão para $month (exceto se tiverem comissão específica).";
+            } else {
+                $success_msg = "Comissão específica salva para $promoterName no mês $month!";
+            }
         } catch (Exception $e) {
             $error_msg = "Erro ao salvar comissão: " . $e->getMessage();
         }
     } else {
-        $error_msg = "Preencha todos os campos!";
+        $error_msg = "Preencha o mês e o valor da comissão!";
     }
 }
 
@@ -147,10 +154,16 @@ $commissions = $db->query("SELECT pch.*, p.commission_percentage as default_perc
                         <label><i class="fas fa-user"></i> Promotor:</label>
                         <select name="promoter" class="form-control" required>
                             <option value="">Selecione...</option>
+                            <option value="TODOS" style="background: #fff3cd; font-weight: bold;">🌟 -- Todos os Consultores --</option>
+                            <option disabled>────────────────</option>
                             <?php foreach ($promoters as $p): ?>
                                 <option value="<?= htmlspecialchars($p) ?>"><?= htmlspecialchars($p) ?></option>
                             <?php endforeach; ?>
                         </select>
+                        <small class="text-muted">
+                            <strong>Todos:</strong> Define comissão padrão do mês<br>
+                            <strong>Individual:</strong> Sobrescreve o padrão para o promotor
+                        </small>
                     </div>
                 </div>
 
@@ -221,7 +234,15 @@ $commissions = $db->query("SELECT pch.*, p.commission_percentage as default_perc
                     <?php foreach ($commissions as $comm): ?>
                         <tr>
                             <td><strong><?= htmlspecialchars($comm['month_reference']) ?></strong></td>
-                            <td><?= htmlspecialchars($comm['promoter_name']) ?></td>
+                            <td>
+                                <?php if ($comm['promoter_name'] === null): ?>
+                                    <span style="background: #fff3cd; padding: 3px 8px; border-radius: 5px; font-weight: bold;">
+                                        🌟 TODOS OS CONSULTORES
+                                    </span>
+                                <?php else: ?>
+                                    <?= htmlspecialchars($comm['promoter_name']) ?>
+                                <?php endif; ?>
+                            </td>
                             <td>
                                 <?php if ($comm['commission_type'] == 'percentage'): ?>
                                     <span class="badge badge-percentage"><i class="fas fa-percent"></i> Percentual</span>

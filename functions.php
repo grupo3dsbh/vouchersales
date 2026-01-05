@@ -159,7 +159,7 @@ function addUser($username, $password, $name, $email = null) {
  * @param string $email (opcional)
  * @return array ['success' => bool, 'message' => string]
  */
-function editUser($id, $username, $password, $name, $email = null) {
+function editUser($id, $username, $password, $name, $role = 'admin', $email = null) {
     try {
         // Busca usuário atual
         $oldUser = Database::fetchOne("SELECT * FROM users WHERE id = ?", [$id]);
@@ -175,6 +175,12 @@ function editUser($id, $username, $password, $name, $email = null) {
             return ['success' => false, 'message' => 'Nome de usuário já existe!'];
         }
 
+        // Valida role
+        $validRoles = ['superadmin', 'admin', 'viewer'];
+        if (!in_array($role, $validRoles)) {
+            $role = 'admin'; // Fallback seguro
+        }
+
         // Atualiza usuário
         if (!empty($password)) {
             // Valida tamanho da senha
@@ -183,16 +189,16 @@ function editUser($id, $username, $password, $name, $email = null) {
             }
 
             $hashedPassword = password_hash($password, PASSWORD_BCRYPT);
-            $sql = "UPDATE users SET username = ?, password = ?, name = ?, email = ? WHERE id = ?";
-            Database::execute($sql, [$username, $hashedPassword, $name, $email, $id]);
+            $sql = "UPDATE users SET username = ?, password = ?, name = ?, role = ?, email = ? WHERE id = ?";
+            Database::execute($sql, [$username, $hashedPassword, $name, $role, $email, $id]);
         } else {
-            $sql = "UPDATE users SET username = ?, name = ?, email = ? WHERE id = ?";
-            Database::execute($sql, [$username, $name, $email, $id]);
+            $sql = "UPDATE users SET username = ?, name = ?, role = ?, email = ? WHERE id = ?";
+            Database::execute($sql, [$username, $name, $role, $email, $id]);
         }
 
         // Log de auditoria
         if (isset($_SESSION['godmode_user_id'])) {
-            logAudit($_SESSION['godmode_user_id'], 'update_user', 'user', $id, json_encode($oldUser), json_encode(['username' => $username, 'name' => $name]));
+            logAudit($_SESSION['godmode_user_id'], 'update_user', 'user', $id, json_encode($oldUser), json_encode(['username' => $username, 'name' => $name, 'role' => $role]));
         }
 
         return ['success' => true, 'message' => 'Usuário atualizado com sucesso!'];
@@ -2253,7 +2259,7 @@ function savePromoterCommissionHistory($promoterName, $month, $commissionPercent
  */
 function getPromoterCommissionForMonth($promoterName, $month) {
     try {
-        // Primeiro tenta buscar do histórico
+        // PRIORIDADE 1: Busca comissão ESPECÍFICA do promotor+mês
         $sql = "SELECT commission_type, commission_value, commission_percentage
                 FROM promoter_commission_history
                 WHERE promoter_name = ? AND month_reference = ?";
@@ -2277,7 +2283,21 @@ function getPromoterCommissionForMonth($promoterName, $month) {
             }
         }
 
-        // Se não tem histórico, busca do cadastro atual do promotor
+        // PRIORIDADE 2: Busca comissão GERAL do mês (promoter_name IS NULL)
+        $sql = "SELECT commission_type, commission_value
+                FROM promoter_commission_history
+                WHERE promoter_name IS NULL AND month_reference = ?";
+
+        $monthDefault = Database::fetchOne($sql, [$month]);
+
+        if ($monthDefault && isset($monthDefault['commission_type'])) {
+            return [
+                'type' => $monthDefault['commission_type'],
+                'value' => (float)$monthDefault['commission_value']
+            ];
+        }
+
+        // PRIORIDADE 3: Busca do cadastro do promotor
         $promoter = getPromoterByName($promoterName);
         if ($promoter && !empty($promoter['commission_percentage'])) {
             return [
@@ -2286,7 +2306,7 @@ function getPromoterCommissionForMonth($promoterName, $month) {
             ];
         }
 
-        // Padrão: 25%
+        // PRIORIDADE 4: Padrão global: 25%
         return [
             'type' => 'percentage',
             'value' => 25.00

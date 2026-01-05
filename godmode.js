@@ -357,7 +357,13 @@ function editUserModal(user) {
     document.getElementById('edit_username').value = user.username;
     document.getElementById('edit_name').value = user.name;
     document.getElementById('edit_password').value = '';
-    
+
+    // Define o role (com fallback para 'admin' se não existir)
+    const roleField = document.getElementById('edit_role');
+    if (roleField) {
+        roleField.value = user.role || 'admin';
+    }
+
     document.getElementById('editUserModal').classList.add('active');
     document.body.style.overflow = 'hidden';
 }

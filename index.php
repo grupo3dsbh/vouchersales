@@ -81,7 +81,8 @@ if ($is_main_admin && isset($_POST['add_user'])) {
 }
 
 if ($is_main_admin && isset($_POST['edit_user'])) {
-    $result = editUser($_POST['edit_id'], $_POST['edit_username'], $_POST['edit_password'], $_POST['edit_name']);
+    $role = $_POST['edit_role'] ?? 'admin';
+    $result = editUser($_POST['edit_id'], $_POST['edit_username'], $_POST['edit_password'], $_POST['edit_name'], $role);
     if ($result['success']) {
         $success_msg = $result['message'];
     } else {
@@ -1277,17 +1278,33 @@ $is_admin_authenticated = $is_admin_mode && isset($_SESSION['admin_authenticated
                         <div class="modal-body">
                             <form method="POST" id="editUserForm">
                                 <input type="hidden" name="edit_id" id="edit_id">
-                                
+
                                 <div style="margin-bottom: 15px;">
                                     <label style="display: block; margin-bottom: 5px; font-weight: 600;">Usuário:</label>
                                     <input type="text" name="edit_username" id="edit_username" class="form-control" required>
                                 </div>
-                                
+
                                 <div style="margin-bottom: 15px;">
                                     <label style="display: block; margin-bottom: 5px; font-weight: 600;">Nome Completo:</label>
                                     <input type="text" name="edit_name" id="edit_name" class="form-control" required>
                                 </div>
-                                
+
+                                <div style="margin-bottom: 15px;">
+                                    <label style="display: block; margin-bottom: 5px; font-weight: 600;">
+                                        <i class="fas fa-shield-alt"></i> Nível de Acesso:
+                                    </label>
+                                    <select name="edit_role" id="edit_role" class="form-control" required>
+                                        <option value="viewer">Visualizador (apenas leitura)</option>
+                                        <option value="admin">Administrador (editar e gerenciar)</option>
+                                        <option value="superadmin">Super Administrador (acesso total)</option>
+                                    </select>
+                                    <small style="color: #666; display: block; margin-top: 5px;">
+                                        <strong>Visualizador:</strong> Apenas visualiza dados<br>
+                                        <strong>Admin:</strong> Pode editar pagamentos e dados<br>
+                                        <strong>Super Admin:</strong> Acesso total + logs + usuários
+                                    </small>
+                                </div>
+
                                 <div style="margin-bottom: 15px;">
                                     <label style="display: block; margin-bottom: 5px; font-weight: 600;">Nova Senha:</label>
                                     <input type="password" name="edit_password" id="edit_password" class="form-control" placeholder="Deixe em branco para manter a atual">
@@ -2163,6 +2180,19 @@ $is_admin_authenticated = $is_admin_mode && isset($_SESSION['admin_authenticated
                                             <i class="fas fa-database"></i> Migrar Tabela
                                         </a>
                                     </div>
+
+                                    <!-- Migração de Comissões Gerais -->
+                                    <div style="background: white; padding: 15px; border-radius: 8px; border: 2px solid #ffc107;">
+                                        <h6 style="color: #856404; margin-bottom: 10px;">
+                                            <i class="fas fa-users-cog"></i> Comissões Gerais
+                                        </h6>
+                                        <p style="font-size: 12px; color: #666; margin-bottom: 10px;">
+                                            Permitir comissão por mês (todos) + override
+                                        </p>
+                                        <a href="admin/migrate_commission_defaults.php" class="btn btn-sm" style="width: 100%; background: #ffc107; color: #333;" target="_blank">
+                                            <i class="fas fa-cog"></i> Migrar Comissões
+                                        </a>
+                                    </div>
                                     <?php endif; ?>
                                 </div>
                             </div>
@@ -2839,17 +2869,33 @@ $is_admin_authenticated = $is_admin_mode && isset($_SESSION['admin_authenticated
                         <div class="modal-body">
                             <form method="POST" id="editUserForm">
                                 <input type="hidden" name="edit_id" id="edit_id">
-                                
+
                                 <div style="margin-bottom: 15px;">
                                     <label style="display: block; margin-bottom: 5px; font-weight: 600;">Usuário:</label>
                                     <input type="text" name="edit_username" id="edit_username" class="form-control" required>
                                 </div>
-                                
+
                                 <div style="margin-bottom: 15px;">
                                     <label style="display: block; margin-bottom: 5px; font-weight: 600;">Nome Completo:</label>
                                     <input type="text" name="edit_name" id="edit_name" class="form-control" required>
                                 </div>
-                                
+
+                                <div style="margin-bottom: 15px;">
+                                    <label style="display: block; margin-bottom: 5px; font-weight: 600;">
+                                        <i class="fas fa-shield-alt"></i> Nível de Acesso:
+                                    </label>
+                                    <select name="edit_role" id="edit_role" class="form-control" required>
+                                        <option value="viewer">Visualizador (apenas leitura)</option>
+                                        <option value="admin">Administrador (editar e gerenciar)</option>
+                                        <option value="superadmin">Super Administrador (acesso total)</option>
+                                    </select>
+                                    <small style="color: #666; display: block; margin-top: 5px;">
+                                        <strong>Visualizador:</strong> Apenas visualiza dados<br>
+                                        <strong>Admin:</strong> Pode editar pagamentos e dados<br>
+                                        <strong>Super Admin:</strong> Acesso total + logs + usuários
+                                    </small>
+                                </div>
+
                                 <div style="margin-bottom: 15px;">
                                     <label style="display: block; margin-bottom: 5px; font-weight: 600;">Nova Senha:</label>
                                     <input type="password" name="edit_password" id="edit_password" class="form-control" placeholder="Deixe em branco para manter a atual">
