@@ -1776,17 +1776,25 @@ function getPromoterAccumulatedBalance($promoterName, $currentMonth) {
         ];
 
         foreach ($months as $month) {
-            // IMPORTANTE: Busca o percentual de comissão ESPECÍFICO daquele mês
-            // Isso permite que cada mês tenha seu próprio percentual
-            $commission_percentage = getPromoterCommissionForMonth($promoterName, $month['month_reference']);
-            $commission = $month['total'] * ($commission_percentage / 100);
+            // IMPORTANTE: Busca a comissão ESPECÍFICA daquele mês
+            // Isso permite que cada mês tenha sua própria comissão (% ou R$ fixo)
+            $commission_config = getPromoterCommissionForMonth($promoterName, $month['month_reference']);
+
+            // Calcula comissão baseado no tipo
+            if ($commission_config['type'] === 'fixed') {
+                $commission = $commission_config['value']; // Valor fixo
+            } else {
+                $commission = $month['total'] * ($commission_config['value'] / 100); // Percentual
+            }
 
             $result['months'][] = [
                 'month' => $month['month_reference'],
                 'quantity' => (int)$month['quantity'],
                 'total' => (float)$month['total'],
                 'commission' => $commission,
-                'commission_percentage' => $commission_percentage,
+                'commission_type' => $commission_config['type'],
+                'commission_value' => $commission_config['value'],
+                'commission_percentage' => $commission_config['value'], // Mantém compatibilidade
                 'paid' => (bool)$month['paid'],
                 'paid_at' => $month['paid_at'],
                 'paid_by' => $month['paid_by']
@@ -1837,18 +1845,29 @@ function getPromoterMonthStats($promoterName, $month) {
                 'quantity' => 0,
                 'total' => 0,
                 'commission' => 0,
+                'commission_type' => 'percentage',
+                'commission_value' => 25.00,
                 'commission_percentage' => 25.00
             ];
         }
 
-        // Busca percentual de comissão ESPECÍFICO deste mês
-        $commission_percentage = getPromoterCommissionForMonth($promoterName, $month);
+        // Busca comissão ESPECÍFICA deste mês
+        $commission_config = getPromoterCommissionForMonth($promoterName, $month);
+
+        // Calcula comissão baseado no tipo
+        if ($commission_config['type'] === 'fixed') {
+            $commission = $commission_config['value']; // Valor fixo
+        } else {
+            $commission = (float)$stats['total'] * ($commission_config['value'] / 100); // Percentual
+        }
 
         return [
             'quantity' => (int)$stats['quantity'],
             'total' => (float)$stats['total'],
-            'commission' => (float)$stats['total'] * ($commission_percentage / 100),
-            'commission_percentage' => $commission_percentage
+            'commission' => $commission,
+            'commission_type' => $commission_config['type'],
+            'commission_value' => $commission_config['value'],
+            'commission_percentage' => $commission_config['value'] // Mantém compatibilidade
         ];
 
     } catch (Exception $e) {
@@ -2009,26 +2028,49 @@ function savePromoterCommissionHistory($promoterName, $month, $commissionPercent
 function getPromoterCommissionForMonth($promoterName, $month) {
     try {
         // Primeiro tenta buscar do histórico
-        $sql = "SELECT commission_percentage FROM promoter_commission_history
+        $sql = "SELECT commission_type, commission_value, commission_percentage
+                FROM promoter_commission_history
                 WHERE promoter_name = ? AND month_reference = ?";
-        
+
         $history = Database::fetchOne($sql, [$promoterName, $month]);
-        
+
         if ($history) {
-            return (float)$history['commission_percentage'];
+            // Se tem novo formato (commission_type/commission_value)
+            if (isset($history['commission_type'])) {
+                return [
+                    'type' => $history['commission_type'],
+                    'value' => (float)$history['commission_value']
+                ];
+            }
+            // Formato antigo (apenas percentage)
+            if (isset($history['commission_percentage'])) {
+                return [
+                    'type' => 'percentage',
+                    'value' => (float)$history['commission_percentage']
+                ];
+            }
         }
 
         // Se não tem histórico, busca do cadastro atual do promotor
         $promoter = getPromoterByName($promoterName);
         if ($promoter && !empty($promoter['commission_percentage'])) {
-            return (float)$promoter['commission_percentage'];
+            return [
+                'type' => 'percentage',
+                'value' => (float)$promoter['commission_percentage']
+            ];
         }
 
         // Padrão: 25%
-        return 25.00;
+        return [
+            'type' => 'percentage',
+            'value' => 25.00
+        ];
 
     } catch (Exception $e) {
         error_log("Erro ao buscar comissão do mês: " . $e->getMessage());
-        return 25.00;
+        return [
+            'type' => 'percentage',
+            'value' => 25.00
+        ];
     }
 }
