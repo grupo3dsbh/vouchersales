@@ -56,9 +56,9 @@ function openDetailsModal(promoterName) {
             
             row.innerHTML = `
                 <td style="text-align: center;">
-                    <input type="checkbox" 
-                           class="payment-checkbox" 
-                           data-promoter="${escapeHtml(promoterName)}" 
+                    <input type="checkbox"
+                           class="payment-checkbox"
+                           data-promoter="${escapeHtml(promoterName)}"
                            data-month="${month.value}"
                            ${monthData.paid ? 'checked' : ''}
                            onchange="togglePaymentConfirm(this, '${escapeHtml(promoterName)}', '${month.value}')">
@@ -70,6 +70,35 @@ function openDetailsModal(promoterName) {
                 <td style="font-size: 11px; color: #666;">
                     ${monthData.paid ? '<span style="color: #28a745;"><i class="fas fa-check-circle"></i> Pago</span>' : '<span style="color: #dc3545;"><i class="fas fa-clock"></i> Pendente</span>'}
                 </td>
+                <td style="text-align: center;">
+                    ${monthData.paid ? (
+                        monthData.receipt && monthData.receipt.exists ? `
+                            <div style="display: flex; gap: 3px; justify-content: center;">
+                                <button onclick="viewReceipt('${escapeHtml(promoterName)}', '${month.value}')"
+                                        class="btn btn-sm btn-success" style="padding: 3px 6px; font-size: 10px;"
+                                        title="Ver Comprovante (${monthData.receipt.filename || ''})">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                                <button onclick="openReceiptModal('${escapeHtml(promoterName)}', '${month.value}', '${month.label}')"
+                                        class="btn btn-sm btn-warning" style="padding: 3px 6px; font-size: 10px;"
+                                        title="Alterar Comprovante">
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                                <button onclick="deleteReceiptConfirm('${escapeHtml(promoterName)}', '${month.value}')"
+                                        class="btn btn-sm btn-danger" style="padding: 3px 6px; font-size: 10px;"
+                                        title="Deletar Comprovante">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        ` : `
+                            <button onclick="openReceiptModal('${escapeHtml(promoterName)}', '${month.value}', '${month.label}')"
+                                    class="btn btn-sm btn-primary" style="padding: 3px 8px; font-size: 11px;"
+                                    title="Upload Comprovante">
+                                <i class="fas fa-upload"></i>
+                            </button>
+                        `
+                    ) : '<span style="color: #999; font-size: 10px;">-</span>'}
+                </td>
             `;
         } else {
             row.innerHTML = `
@@ -79,6 +108,7 @@ function openDetailsModal(promoterName) {
                 <td style="color: #999;">-</td>
                 <td style="color: #999;">-</td>
                 <td style="color: #999;">Sem vendas</td>
+                <td></td>
             `;
         }
         
@@ -343,5 +373,225 @@ document.addEventListener('keydown', function(e) {
         closeDetailsModal();
         closeUsersModal();
         closeEditUserModal();
+        closeReceiptModal();
+    }
+});
+
+// ===== FUNÇÕES DE COMPROVANTES DE PAGAMENTO =====
+
+/**
+ * Abre o modal de upload de comprovante
+ */
+function openReceiptModal(promoter, month, monthLabel) {
+    document.getElementById('receiptPromoterName').textContent = promoter;
+    document.getElementById('receiptMonth').textContent = monthLabel;
+    document.getElementById('receipt_promoter').value = promoter;
+    document.getElementById('receipt_month').value = month;
+
+    // Reseta o formulário
+    document.getElementById('receiptUploadForm').reset();
+    document.getElementById('receiptPreview').style.display = 'none';
+    document.getElementById('uploadProgress').style.display = 'none';
+    document.getElementById('receipt_file').required = true;
+
+    document.getElementById('receiptModal').style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+}
+
+/**
+ * Fecha o modal de upload de comprovante
+ */
+function closeReceiptModal(event) {
+    if (event && event.target.id !== 'receiptModal' && event.type === 'click') {
+        return;
+    }
+    document.getElementById('receiptModal').style.display = 'none';
+    document.body.style.overflow = 'auto';
+}
+
+/**
+ * Visualiza comprovante existente
+ */
+function viewReceipt(promoter, month) {
+    fetch('ajax_receipt_upload.php', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: `action=view_receipt&promoter=${encodeURIComponent(promoter)}&month=${encodeURIComponent(month)}`
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            if (data.storage_type === 'file') {
+                // Abre arquivo em nova aba
+                window.open(data.file_path, '_blank');
+            } else if (data.storage_type === 'base64') {
+                // Cria modal para exibir base64
+                const mimeType = data.mime_type;
+                const base64Data = data.base64;
+
+                if (mimeType.startsWith('image/')) {
+                    // Exibe imagem
+                    const img = new Image();
+                    img.src = `data:${mimeType};base64,${base64Data}`;
+                    img.style.maxWidth = '100%';
+                    img.style.maxHeight = '80vh';
+
+                    const viewer = window.open('', '_blank');
+                    viewer.document.write(`
+                        <html>
+                        <head><title>${data.filename}</title></head>
+                        <body style="margin: 0; display: flex; align-items: center; justify-content: center; background: #333;">
+                            ${img.outerHTML}
+                        </body>
+                        </html>
+                    `);
+                } else if (mimeType === 'application/pdf') {
+                    // Exibe PDF
+                    const pdfWindow = window.open('', '_blank');
+                    pdfWindow.document.write(`
+                        <html>
+                        <head><title>${data.filename}</title></head>
+                        <body style="margin: 0;">
+                            <embed src="data:${mimeType};base64,${base64Data}" type="application/pdf" width="100%" height="100%">
+                        </body>
+                        </html>
+                    `);
+                }
+            }
+        } else {
+            alert('Erro ao carregar comprovante: ' + data.message);
+        }
+    })
+    .catch(error => {
+        console.error('Erro:', error);
+        alert('Erro ao carregar comprovante');
+    });
+}
+
+/**
+ * Deleta comprovante
+ */
+function deleteReceiptConfirm(promoter, month) {
+    if (!confirm('Tem certeza que deseja DELETAR o comprovante deste pagamento?')) {
+        return;
+    }
+
+    fetch('ajax_receipt_upload.php', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: `action=delete_receipt&promoter=${encodeURIComponent(promoter)}&month=${encodeURIComponent(month)}`
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert('Comprovante deletado com sucesso!');
+            closeDetailsModal();
+            setTimeout(() => openDetailsModal(promoter), 300);
+        } else {
+            alert('Erro ao deletar: ' + data.message);
+        }
+    })
+    .catch(error => {
+        console.error('Erro:', error);
+        alert('Erro ao deletar comprovante');
+    });
+}
+
+// Preview de imagem ao selecionar arquivo
+document.addEventListener('DOMContentLoaded', function() {
+    const fileInput = document.getElementById('receipt_file');
+    const preview = document.getElementById('receiptPreview');
+    const previewImage = document.getElementById('previewImage');
+    const storageModeInputs = document.querySelectorAll('input[name="storage_mode"]');
+    const fileUploadSection = document.getElementById('fileUploadSection');
+    const uploadButtonText = document.getElementById('uploadButtonText');
+
+    // Atualiza visual quando muda o modo de armazenamento
+    storageModeInputs.forEach(input => {
+        input.addEventListener('change', function() {
+            if (this.value === 'none') {
+                fileUploadSection.style.display = 'none';
+                preview.style.display = 'none';
+                fileInput.required = false;
+                uploadButtonText.textContent = 'Remover Comprovante';
+            } else {
+                fileUploadSection.style.display = 'block';
+                fileInput.required = true;
+                uploadButtonText.textContent = 'Enviar Comprovante';
+            }
+        });
+    });
+
+    // Preview de imagem
+    if (fileInput) {
+        fileInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+
+            if (file) {
+                const reader = new FileReader();
+
+                reader.onload = function(e) {
+                    if (file.type.startsWith('image/')) {
+                        previewImage.src = e.target.result;
+                        preview.style.display = 'block';
+                    } else {
+                        preview.style.display = 'none';
+                    }
+                };
+
+                reader.readAsDataURL(file);
+            } else {
+                preview.style.display = 'none';
+            }
+        });
+    }
+
+    // Submit do formulário de upload
+    const uploadForm = document.getElementById('receiptUploadForm');
+    if (uploadForm) {
+        uploadForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+
+            const formData = new FormData(this);
+            formData.append('action', 'upload_receipt');
+
+            const uploadProgress = document.getElementById('uploadProgress');
+            const submitBtn = uploadForm.querySelector('button[type="submit"]');
+
+            submitBtn.disabled = true;
+            uploadProgress.style.display = 'block';
+
+            fetch('ajax_receipt_upload.php', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                submitBtn.disabled = false;
+                uploadProgress.style.display = 'none';
+
+                if (data.success) {
+                    alert(data.message);
+                    closeReceiptModal();
+
+                    // Recarrega modal de detalhes
+                    const promoter = document.getElementById('receipt_promoter').value;
+                    closeDetailsModal();
+                    setTimeout(() => openDetailsModal(promoter), 300);
+                } else {
+                    alert('Erro: ' + data.message);
+                }
+            })
+            .catch(error => {
+                submitBtn.disabled = false;
+                uploadProgress.style.display = 'none';
+                console.error('Erro:', error);
+                alert('Erro ao enviar comprovante');
+            });
+        });
     }
 });

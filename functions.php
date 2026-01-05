@@ -477,6 +477,224 @@ function saveCommissionData($promoter, $month, $amount, $vouchers) {
     }
 }
 
+// ===== COMPROVANTES DE PAGAMENTO =====
+
+/**
+ * Salva comprovante como arquivo no servidor
+ *
+ * @param array $file $_FILES['receipt']
+ * @param string $promoter Nome do promotor
+ * @param string $month Mês de referência (YYYY-MM)
+ * @return array ['success' => bool, 'file_path' => string, 'filename' => string, 'mime_type' => string, 'error' => string]
+ */
+function saveReceiptFile($file, $promoter, $month) {
+    $result = ['success' => false, 'file_path' => null, 'filename' => null, 'mime_type' => null, 'error' => ''];
+
+    try {
+        // Valida se o arquivo foi enviado
+        if (!isset($file['tmp_name']) || empty($file['tmp_name'])) {
+            $result['error'] = 'Nenhum arquivo foi enviado';
+            return $result;
+        }
+
+        // Valida erros de upload
+        if ($file['error'] !== UPLOAD_ERR_OK) {
+            $result['error'] = 'Erro no upload: ' . $file['error'];
+            return $result;
+        }
+
+        // Valida tipo de arquivo (apenas imagens e PDFs)
+        $allowedMimeTypes = [
+            'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp',
+            'application/pdf'
+        ];
+
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+        $mimeType = finfo_file($finfo, $file['tmp_name']);
+        finfo_close($finfo);
+
+        if (!in_array($mimeType, $allowedMimeTypes)) {
+            $result['error'] = 'Tipo de arquivo não permitido. Apenas imagens (JPG, PNG, GIF, WEBP) e PDF são aceitos.';
+            return $result;
+        }
+
+        // Valida tamanho (máximo 10MB)
+        $maxSize = 10 * 1024 * 1024; // 10MB
+        if ($file['size'] > $maxSize) {
+            $result['error'] = 'Arquivo muito grande. Tamanho máximo: 10MB';
+            return $result;
+        }
+
+        // Define extensão baseada no MIME type
+        $extension = match($mimeType) {
+            'image/jpeg', 'image/jpg' => 'jpg',
+            'image/png' => 'png',
+            'image/gif' => 'gif',
+            'image/webp' => 'webp',
+            'application/pdf' => 'pdf',
+            default => 'bin'
+        };
+
+        // Cria estrutura de diretórios: /uploads/receipts/YYYY-MM/
+        $baseDir = __DIR__ . '/uploads/receipts';
+        $monthDir = $baseDir . '/' . $month;
+
+        if (!is_dir($monthDir)) {
+            mkdir($monthDir, 0755, true);
+        }
+
+        // Sanitiza nome do promotor para usar como nome de arquivo
+        $safeName = preg_replace('/[^a-zA-Z0-9_-]/', '_', $promoter);
+        $filename = $safeName . '_' . $month . '_' . time() . '.' . $extension;
+        $filePath = $monthDir . '/' . $filename;
+
+        // Move arquivo para o diretório
+        if (!move_uploaded_file($file['tmp_name'], $filePath)) {
+            $result['error'] = 'Erro ao salvar arquivo no servidor';
+            return $result;
+        }
+
+        // Define permissões adequadas
+        chmod($filePath, 0644);
+
+        // Retorna sucesso
+        $result['success'] = true;
+        $result['file_path'] = 'uploads/receipts/' . $month . '/' . $filename; // Caminho relativo
+        $result['filename'] = $file['name']; // Nome original
+        $result['mime_type'] = $mimeType;
+
+    } catch (Exception $e) {
+        $result['error'] = 'Erro ao salvar arquivo: ' . $e->getMessage();
+        error_log("Erro em saveReceiptFile: " . $e->getMessage());
+    }
+
+    return $result;
+}
+
+/**
+ * Salva comprovante como base64 no banco de dados
+ *
+ * @param array $file $_FILES['receipt']
+ * @return array ['success' => bool, 'base64' => string, 'filename' => string, 'mime_type' => string, 'error' => string]
+ */
+function saveReceiptBase64($file) {
+    $result = ['success' => false, 'base64' => null, 'filename' => null, 'mime_type' => null, 'error' => ''];
+
+    try {
+        // Valida se o arquivo foi enviado
+        if (!isset($file['tmp_name']) || empty($file['tmp_name'])) {
+            $result['error'] = 'Nenhum arquivo foi enviado';
+            return $result;
+        }
+
+        // Valida erros de upload
+        if ($file['error'] !== UPLOAD_ERR_OK) {
+            $result['error'] = 'Erro no upload: ' . $file['error'];
+            return $result;
+        }
+
+        // Valida tipo de arquivo
+        $allowedMimeTypes = [
+            'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp',
+            'application/pdf'
+        ];
+
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+        $mimeType = finfo_file($finfo, $file['tmp_name']);
+        finfo_close($finfo);
+
+        if (!in_array($mimeType, $allowedMimeTypes)) {
+            $result['error'] = 'Tipo de arquivo não permitido. Apenas imagens (JPG, PNG, GIF, WEBP) e PDF são aceitos.';
+            return $result;
+        }
+
+        // Valida tamanho (máximo 10MB para base64 também)
+        $maxSize = 10 * 1024 * 1024; // 10MB
+        if ($file['size'] > $maxSize) {
+            $result['error'] = 'Arquivo muito grande. Tamanho máximo: 10MB';
+            return $result;
+        }
+
+        // Lê conteúdo do arquivo e converte para base64
+        $fileContent = file_get_contents($file['tmp_name']);
+        $base64 = base64_encode($fileContent);
+
+        // Retorna sucesso
+        $result['success'] = true;
+        $result['base64'] = $base64;
+        $result['filename'] = $file['name']; // Nome original
+        $result['mime_type'] = $mimeType;
+
+    } catch (Exception $e) {
+        $result['error'] = 'Erro ao processar arquivo: ' . $e->getMessage();
+        error_log("Erro em saveReceiptBase64: " . $e->getMessage());
+    }
+
+    return $result;
+}
+
+/**
+ * Busca dados do comprovante de pagamento
+ *
+ * @param string $promoter Nome do promotor
+ * @param string $month Mês de referência (YYYY-MM)
+ * @return array|null
+ */
+function getReceiptData($promoter, $month) {
+    try {
+        $sql = "SELECT receipt_storage_type, receipt_file_path, receipt_base64, receipt_filename, receipt_mime_type
+                FROM payments
+                WHERE promoter = ? AND month = ?";
+        return Database::fetchOne($sql, [$promoter, $month]);
+    } catch (Exception $e) {
+        error_log("Erro ao buscar dados do comprovante: " . $e->getMessage());
+        return null;
+    }
+}
+
+/**
+ * Deleta comprovante de pagamento
+ *
+ * @param string $promoter Nome do promotor
+ * @param string $month Mês de referência (YYYY-MM)
+ * @return bool
+ */
+function deleteReceipt($promoter, $month) {
+    try {
+        // Busca dados atuais
+        $receipt = getReceiptData($promoter, $month);
+
+        if (!$receipt) {
+            return true; // Não há comprovante, considera sucesso
+        }
+
+        // Se for arquivo, deleta do filesystem
+        if ($receipt['receipt_storage_type'] === 'file' && !empty($receipt['receipt_file_path'])) {
+            $filePath = __DIR__ . '/' . $receipt['receipt_file_path'];
+            if (file_exists($filePath)) {
+                unlink($filePath);
+            }
+        }
+
+        // Limpa campos do banco de dados
+        $sql = "UPDATE payments
+                SET receipt_storage_type = 'none',
+                    receipt_file_path = NULL,
+                    receipt_base64 = NULL,
+                    receipt_filename = NULL,
+                    receipt_mime_type = NULL
+                WHERE promoter = ? AND month = ?";
+
+        Database::execute($sql, [$promoter, $month]);
+
+        return true;
+
+    } catch (Exception $e) {
+        error_log("Erro ao deletar comprovante: " . $e->getMessage());
+        return false;
+    }
+}
+
 // ===== ARQUIVOS CSV =====
 
 /**
@@ -661,6 +879,14 @@ function calculateGodmodeStats($available_months) {
     foreach ($godmode_data as $promoter => &$data) {
         foreach ($data['months'] as $month => &$month_data) {
             $month_data['paid'] = isCommissionPaid($promoter, $month);
+
+            // Adiciona dados do comprovante de pagamento
+            $receipt = getReceiptData($promoter, $month);
+            $month_data['receipt'] = [
+                'exists' => $receipt && $receipt['receipt_storage_type'] !== 'none',
+                'type' => $receipt['receipt_storage_type'] ?? 'none',
+                'filename' => $receipt['receipt_filename'] ?? null
+            ];
 
             if ($month_data['paid']) {
                 $data['paid_value'] += $month_data['value'];

@@ -1036,6 +1036,7 @@ $is_admin_authenticated = $is_admin_mode && isset($_SESSION['admin_authenticated
                                         <th>Valor Total</th>
                                         <th>Comissão (25%)</th>
                                         <th>Status</th>
+                                        <th style="width: 120px;">Comprovante</th>
                                     </tr>
                                 </thead>
                                 <tbody id="modalTableBody">
@@ -1049,12 +1050,14 @@ $is_admin_authenticated = $is_admin_mode && isset($_SESSION['admin_authenticated
                                         <td id="modalTotalValue"></td>
                                         <td id="modalTotalCommission"></td>
                                         <td></td>
+                                        <td></td>
                                     </tr>
                                     <tr style="background: #28a745; color: white; font-weight: bold;">
                                         <td colspan="2">TOTAL PAGO</td>
                                         <td id="modalPaidVouchers"></td>
                                         <td id="modalPaidValue"></td>
                                         <td id="modalPaidCommission"></td>
+                                        <td></td>
                                         <td></td>
                                     </tr>
                                     <tr style="background: #dc3545; color: white; font-weight: bold;">
@@ -1063,13 +1066,105 @@ $is_admin_authenticated = $is_admin_mode && isset($_SESSION['admin_authenticated
                                         <td id="modalUnpaidValue"></td>
                                         <td id="modalUnpaidCommission"></td>
                                         <td></td>
+                                        <td></td>
                                     </tr>
                                 </tfoot>
                             </table>
                         </div>
                     </div>
                 </div>
-                
+
+                <!-- Modal de Upload de Comprovante -->
+                <div class="modal-overlay" id="receiptModal" onclick="closeReceiptModal(event)" style="display: none;">
+                    <div class="modal-content" onclick="event.stopPropagation()" style="max-width: 600px;">
+                        <div class="modal-header">
+                            <h3>
+                                <i class="fas fa-receipt"></i>
+                                Upload de Comprovante de Pagamento
+                            </h3>
+                            <button class="modal-close" onclick="closeReceiptModal()">&times;</button>
+                        </div>
+                        <div class="modal-body">
+                            <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                                <h4 style="margin-bottom: 10px; color: #333;">
+                                    <i class="fas fa-user"></i> <span id="receiptPromoterName"></span>
+                                </h4>
+                                <p style="margin: 0; color: #666;">
+                                    <i class="fas fa-calendar"></i> Mês: <strong id="receiptMonth"></strong>
+                                </p>
+                            </div>
+
+                            <form id="receiptUploadForm" enctype="multipart/form-data">
+                                <input type="hidden" id="receipt_promoter" name="promoter">
+                                <input type="hidden" id="receipt_month" name="month">
+
+                                <!-- Modo de Armazenamento -->
+                                <div style="margin-bottom: 20px;">
+                                    <label style="display: block; margin-bottom: 10px; font-weight: 600; color: #333;">
+                                        <i class="fas fa-database"></i> Modo de Armazenamento:
+                                    </label>
+
+                                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
+                                        <label style="display: flex; flex-direction: column; align-items: center; padding: 15px; border: 2px solid #17a2b8; border-radius: 8px; cursor: pointer; transition: all 0.3s;" class="storage-option">
+                                            <input type="radio" name="storage_mode" value="file" checked style="margin-bottom: 5px;">
+                                            <i class="fas fa-folder" style="font-size: 24px; margin-bottom: 5px; color: #17a2b8;"></i>
+                                            <strong style="font-size: 13px;">Arquivo</strong>
+                                            <small style="text-align: center; color: #666; margin-top: 5px;">Salva no servidor</small>
+                                        </label>
+
+                                        <label style="display: flex; flex-direction: column; align-items: center; padding: 15px; border: 2px solid #6f42c1; border-radius: 8px; cursor: pointer; transition: all 0.3s;" class="storage-option">
+                                            <input type="radio" name="storage_mode" value="base64" style="margin-bottom: 5px;">
+                                            <i class="fas fa-database" style="font-size: 24px; margin-bottom: 5px; color: #6f42c1;"></i>
+                                            <strong style="font-size: 13px;">Base64</strong>
+                                            <small style="text-align: center; color: #666; margin-top: 5px;">Salva no banco</small>
+                                        </label>
+
+                                        <label style="display: flex; flex-direction: column; align-items: center; padding: 15px; border: 2px solid #6c757d; border-radius: 8px; cursor: pointer; transition: all 0.3s;" class="storage-option">
+                                            <input type="radio" name="storage_mode" value="none" style="margin-bottom: 5px;">
+                                            <i class="fas fa-times-circle" style="font-size: 24px; margin-bottom: 5px; color: #6c757d;"></i>
+                                            <strong style="font-size: 13px;">Nenhum</strong>
+                                            <small style="text-align: center; color: #666; margin-top: 5px;">Remover</small>
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <!-- Upload de Arquivo -->
+                                <div id="fileUploadSection" style="margin-bottom: 20px;">
+                                    <label style="display: block; margin-bottom: 10px; font-weight: 600; color: #333;">
+                                        <i class="fas fa-file-upload"></i> Selecione o Arquivo:
+                                    </label>
+                                    <input type="file" id="receipt_file" name="receipt" accept="image/*,application/pdf"
+                                           class="form-control" style="padding: 10px;">
+                                    <small style="display: block; margin-top: 5px; color: #666;">
+                                        <i class="fas fa-info-circle"></i> Formatos aceitos: JPG, PNG, GIF, WEBP, PDF (máx 10MB)
+                                    </small>
+                                </div>
+
+                                <!-- Preview -->
+                                <div id="receiptPreview" style="display: none; margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px; text-align: center;">
+                                    <p style="margin-bottom: 10px; font-weight: 600;">Preview:</p>
+                                    <img id="previewImage" style="max-width: 100%; max-height: 300px; border-radius: 5px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+                                </div>
+
+                                <!-- Botões -->
+                                <div style="display: flex; gap: 10px; margin-top: 20px;">
+                                    <button type="button" onclick="closeReceiptModal()" class="btn btn-secondary" style="flex: 1;">
+                                        <i class="fas fa-times"></i> Cancelar
+                                    </button>
+                                    <button type="submit" class="btn btn-success" style="flex: 2;">
+                                        <i class="fas fa-upload"></i> <span id="uploadButtonText">Enviar Comprovante</span>
+                                    </button>
+                                </div>
+
+                                <!-- Mensagem de Progresso -->
+                                <div id="uploadProgress" style="display: none; margin-top: 15px; padding: 10px; background: #d1ecf1; border-radius: 5px; text-align: center; color: #0c5460;">
+                                    <i class="fas fa-spinner fa-spin"></i> Enviando...
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Modal de Gestão de Usuários -->
                 <?php if ($is_main_admin): ?>
                 <div class="modal-overlay" id="usersModal" onclick="closeModalOnOverlay(event)">
@@ -2011,6 +2106,64 @@ $is_admin_authenticated = $is_admin_mode && isset($_SESSION['admin_authenticated
                                             </button>
                                         </form>
                                     </div>
+
+                                    <!-- Gerenciar Comissões -->
+                                    <div style="background: white; padding: 15px; border-radius: 8px; border: 2px solid #28a745;">
+                                        <h6 style="color: #155724; margin-bottom: 10px;">
+                                            <i class="fas fa-percent"></i> Gerenciar Comissões
+                                        </h6>
+                                        <p style="font-size: 12px; color: #666; margin-bottom: 10px;">
+                                            Configura comissão por promotor/mês (% ou R$)
+                                        </p>
+                                        <a href="admin/manage_commissions.php" class="btn btn-success btn-sm" style="width: 100%;" target="_blank">
+                                            <i class="fas fa-cog"></i> Abrir Gerenciador
+                                        </a>
+                                    </div>
+
+                                    <?php if (canViewAuditLogs()): ?>
+                                    <!-- Logs de Auditoria -->
+                                    <div style="background: white; padding: 15px; border-radius: 8px; border: 2px solid #fd7e14;">
+                                        <h6 style="color: #8b4513; margin-bottom: 10px;">
+                                            <i class="fas fa-history"></i> Logs de Auditoria
+                                        </h6>
+                                        <p style="font-size: 12px; color: #666; margin-bottom: 10px;">
+                                            Visualiza histórico completo de ações
+                                        </p>
+                                        <a href="admin/audit_logs.php" class="btn btn-sm" style="width: 100%; background: #fd7e14; color: white;" target="_blank">
+                                            <i class="fas fa-eye"></i> Ver Logs
+                                        </a>
+                                    </div>
+                                    <?php endif; ?>
+
+                                    <?php if (canManageUsers()): ?>
+                                    <!-- Migrar Roles (uma vez) -->
+                                    <div style="background: white; padding: 15px; border-radius: 8px; border: 2px solid #e83e8c;">
+                                        <h6 style="color: #7d2050; margin-bottom: 10px;">
+                                            <i class="fas fa-user-shield"></i> Níveis de Acesso
+                                        </h6>
+                                        <p style="font-size: 12px; color: #666; margin-bottom: 10px;">
+                                            Configurar roles dos usuários
+                                        </p>
+                                        <a href="admin/migrate_user_roles.php" class="btn btn-sm" style="width: 100%; background: #e83e8c; color: white;" target="_blank">
+                                            <i class="fas fa-shield-alt"></i> Configurar Roles
+                                        </a>
+                                    </div>
+                                    <?php endif; ?>
+
+                                    <?php if (canEdit()): ?>
+                                    <!-- Migração de Comprovantes -->
+                                    <div style="background: white; padding: 15px; border-radius: 8px; border: 2px solid #20c997;">
+                                        <h6 style="color: #0d6e4f; margin-bottom: 10px;">
+                                            <i class="fas fa-receipt"></i> Sistema de Comprovantes
+                                        </h6>
+                                        <p style="font-size: 12px; color: #666; margin-bottom: 10px;">
+                                            Habilitar upload de comprovantes (executar uma vez)
+                                        </p>
+                                        <a href="admin/migrate_payment_receipts.php" class="btn btn-sm" style="width: 100%; background: #20c997; color: white;" target="_blank">
+                                            <i class="fas fa-database"></i> Migrar Tabela
+                                        </a>
+                                    </div>
+                                    <?php endif; ?>
                                 </div>
                             </div>
 
