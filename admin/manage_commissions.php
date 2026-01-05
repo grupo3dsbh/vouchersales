@@ -147,6 +147,17 @@ $commissions = $db->query("SELECT pch.*, p.commission_percentage as default_perc
     <!-- Formulário -->
     <div class="form-section">
         <h4 style="margin-bottom: 20px;"><i class="fas fa-plus-circle"></i> Definir Comissão</h4>
+
+        <div class="alert alert-info" style="margin-bottom: 20px;">
+            <h5 style="margin-bottom: 10px;"><i class="fas fa-info-circle"></i> Como Funciona:</h5>
+            <ul style="margin: 0; padding-left: 20px;">
+                <li><strong>Percentual (%):</strong> Comissão calculada sobre o VALOR TOTAL de vendas do mês</li>
+                <li><strong>Valor Fixo (R$):</strong> Comissão calculada POR VENDA (Ex: R$10 por venda x 5 vendas = R$50)</li>
+            </ul>
+            <hr style="margin: 10px 0;">
+            <p style="margin: 0;"><strong>📌 Prioridade:</strong> Comissão específica → Comissão geral do mês → Cadastro do promotor → Padrão (25%)</p>
+        </div>
+
         <form method="POST">
             <div class="row">
                 <div class="col-md-3">

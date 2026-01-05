@@ -873,17 +873,39 @@ function calculateGodmodeStats($available_months) {
 
             $godmode_data[$promoter]['months'][$month_value]['vouchers']++;
             $godmode_data[$promoter]['months'][$month_value]['value'] += $data['value'];
-            $godmode_data[$promoter]['months'][$month_value]['commission'] += ($data['value'] * 0.25);
+            // NÃO calcula comissão aqui - será calculado depois com a configuração correta
 
             $godmode_data[$promoter]['total_vouchers']++;
             $godmode_data[$promoter]['total_value'] += $data['value'];
-            $godmode_data[$promoter]['total_commission'] += ($data['value'] * 0.25);
+            // NÃO calcula comissão aqui - será calculado depois com a configuração correta
         }
     }
 
-    // Marca pagamentos e calcula valores pagos/não pagos
+    // Calcula comissões com configuração correta + marca pagamentos
     foreach ($godmode_data as $promoter => &$data) {
+        $data['total_commission'] = 0; // Reseta para recalcular corretamente
+
         foreach ($data['months'] as $month => &$month_data) {
+            // Busca configuração de comissão ESPECÍFICA deste promotor+mês
+            $commission_config = getPromoterCommissionForMonth($promoter, $month);
+
+            // Calcula comissão baseado no tipo
+            if ($commission_config['type'] === 'fixed') {
+                // Valor fixo POR VENDA (vouchers * valor_fixo)
+                $month_data['commission'] = $month_data['vouchers'] * $commission_config['value'];
+            } else {
+                // Percentual sobre o valor total
+                $month_data['commission'] = $month_data['value'] * ($commission_config['value'] / 100);
+            }
+
+            // Armazena info do tipo de comissão
+            $month_data['commission_type'] = $commission_config['type'];
+            $month_data['commission_value'] = $commission_config['value'];
+
+            // Atualiza total
+            $data['total_commission'] += $month_data['commission'];
+
+            // Marca status de pagamento
             $month_data['paid'] = isCommissionPaid($promoter, $month);
 
             // Adiciona dados do comprovante de pagamento
@@ -2014,9 +2036,11 @@ function getPromoterAccumulatedBalance($promoterName, $currentMonth) {
 
             // Calcula comissão baseado no tipo
             if ($commission_config['type'] === 'fixed') {
-                $commission = $commission_config['value']; // Valor fixo
+                // Valor fixo POR VENDA (quantidade * valor_fixo)
+                $commission = (int)$month['quantity'] * $commission_config['value'];
             } else {
-                $commission = $month['total'] * ($commission_config['value'] / 100); // Percentual
+                // Percentual sobre o valor total
+                $commission = $month['total'] * ($commission_config['value'] / 100);
             }
 
             $result['months'][] = [
@@ -2088,9 +2112,11 @@ function getPromoterMonthStats($promoterName, $month) {
 
         // Calcula comissão baseado no tipo
         if ($commission_config['type'] === 'fixed') {
-            $commission = $commission_config['value']; // Valor fixo
+            // Valor fixo POR VENDA (quantidade * valor_fixo)
+            $commission = (int)$stats['quantity'] * $commission_config['value'];
         } else {
-            $commission = (float)$stats['total'] * ($commission_config['value'] / 100); // Percentual
+            // Percentual sobre o valor total
+            $commission = (float)$stats['total'] * ($commission_config['value'] / 100);
         }
 
         return [
