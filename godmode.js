@@ -230,20 +230,36 @@ function selectAllPayments(markAsPaid) {
 }
 
 function togglePaymentConfirm(checkbox, promoter, month) {
-    const action = checkbox.checked ? 'marcar como PAGO' : 'desmarcar como PAGO';
-    const message = `Tem certeza que deseja ${action} a comissão de ${promoter} para o período ${month}?`;
-    
-    if (confirm(message)) {
-        // Confirma novamente para ações críticas
-        const doubleCheck = confirm('Esta ação será registrada no sistema. Confirma?');
-        if (doubleCheck) {
-            togglePayment(promoter, month, checkbox.checked, checkbox);
+    const isPaying = checkbox.checked;
+
+    if (isPaying) {
+        // Se está marcando como PAGO, abre modal de comprovante
+        checkbox.checked = false; // Reverte temporariamente
+
+        // Formata o mês para exibição (YYYY-MM -> MMM/YYYY)
+        const monthLabel = formatMonthLabel(month);
+
+        // Abre modal de comprovante com opção de upload opcional
+        openReceiptModalForPayment(promoter, month, monthLabel, checkbox);
+    } else {
+        // Se está desmarcando como pago, usa fluxo normal
+        const message = `Tem certeza que deseja DESMARCAR como PAGO a comissão de ${promoter} para o período ${month}?`;
+
+        if (confirm(message)) {
+            togglePayment(promoter, month, false, checkbox);
         } else {
             checkbox.checked = !checkbox.checked;
         }
-    } else {
-        checkbox.checked = !checkbox.checked;
     }
+}
+
+/**
+ * Formata mês YYYY-MM para exibição
+ */
+function formatMonthLabel(monthValue) {
+    const [year, month] = monthValue.split('-');
+    const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+    return `${months[parseInt(month) - 1]}/${year}`;
 }
 
 function togglePayment(promoter, month, paid, checkbox) {
@@ -400,6 +416,39 @@ function openReceiptModal(promoter, month, monthLabel) {
     document.getElementById('uploadProgress').style.display = 'none';
     document.getElementById('receipt_file').required = true;
 
+    // Remove referência a checkbox (modo de edição de comprovante)
+    delete window.pendingPaymentCheckbox;
+
+    document.getElementById('receiptModal').style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+}
+
+/**
+ * Abre modal de comprovante ao marcar pagamento como pago
+ * Armazena referência ao checkbox para atualizar após sucesso
+ */
+function openReceiptModalForPayment(promoter, month, monthLabel, checkbox) {
+    document.getElementById('receiptPromoterName').textContent = promoter;
+    document.getElementById('receiptMonth').textContent = monthLabel;
+    document.getElementById('receipt_promoter').value = promoter;
+    document.getElementById('receipt_month').value = month;
+
+    // Reseta o formulário
+    document.getElementById('receiptUploadForm').reset();
+    document.getElementById('receiptPreview').style.display = 'none';
+    document.getElementById('uploadProgress').style.display = 'none';
+
+    // Marca "sem comprovante" por padrão para permitir marcar como pago sem upload
+    const noneRadio = document.querySelector('input[name="storage_mode"][value="none"]');
+    if (noneRadio) {
+        noneRadio.checked = true;
+        // Dispara evento change para atualizar UI
+        noneRadio.dispatchEvent(new Event('change'));
+    }
+
+    // Armazena checkbox para atualizar após sucesso
+    window.pendingPaymentCheckbox = checkbox;
+
     document.getElementById('receiptModal').style.display = 'flex';
     document.body.style.overflow = 'hidden';
 }
@@ -411,6 +460,12 @@ function closeReceiptModal(event) {
     if (event && event.target.id !== 'receiptModal' && event.type === 'click') {
         return;
     }
+
+    // Se havia checkbox pendente (cancelou marcação de pagamento), limpa
+    if (window.pendingPaymentCheckbox) {
+        delete window.pendingPaymentCheckbox;
+    }
+
     document.getElementById('receiptModal').style.display = 'none';
     document.body.style.overflow = 'auto';
 }
@@ -584,10 +639,27 @@ document.addEventListener('DOMContentLoaded', function() {
                     alert(data.message);
                     closeReceiptModal();
 
-                    // Recarrega modal de detalhes
-                    const promoter = document.getElementById('receipt_promoter').value;
-                    closeDetailsModal();
-                    setTimeout(() => openDetailsModal(promoter), 300);
+                    // Se há checkbox pendente, atualiza o status do pagamento
+                    if (window.pendingPaymentCheckbox) {
+                        const checkbox = window.pendingPaymentCheckbox;
+                        checkbox.checked = true;
+                        checkbox.disabled = false;
+
+                        // Limpa referência
+                        delete window.pendingPaymentCheckbox;
+
+                        // Recarrega dados do promotor
+                        const promoter = document.getElementById('receipt_promoter').value;
+                        setTimeout(() => {
+                            // Atualiza a página para refletir mudanças
+                            window.location.reload();
+                        }, 500);
+                    } else {
+                        // Modo de edição de comprovante - recarrega modal de detalhes
+                        const promoter = document.getElementById('receipt_promoter').value;
+                        closeDetailsModal();
+                        setTimeout(() => openDetailsModal(promoter), 300);
+                    }
                 } else {
                     alert('Erro: ' + data.message);
                 }

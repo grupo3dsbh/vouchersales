@@ -55,6 +55,10 @@ try {
             $sql = "INSERT INTO payments (promoter, month, paid, paid_by, paid_at)
                     VALUES (?, ?, 1, ?, NOW())";
             Database::execute($sql, [$promoter, $month, $userId]);
+        } else if ($payment['paid'] != 1) {
+            // Se existe mas não está marcado como pago, marca como pago
+            $sql = "UPDATE payments SET paid = 1, paid_by = ?, paid_at = NOW() WHERE promoter = ? AND month = ?";
+            Database::execute($sql, [$userId, $promoter, $month]);
         }
 
         // Remove comprovante anterior (se houver)
