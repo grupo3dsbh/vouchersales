@@ -292,6 +292,82 @@ function getUserById($id) {
     }
 }
 
+/**
+ * Verifica se o usuário tem uma role específica
+ *
+ * @param string $role Role a verificar (superadmin, admin, viewer)
+ * @return bool
+ */
+function hasRole($role) {
+    if (!isset($_SESSION['godmode_user_role'])) {
+        return false;
+    }
+    return $_SESSION['godmode_user_role'] === $role;
+}
+
+/**
+ * Verifica se o usuário é superadmin
+ *
+ * @return bool
+ */
+function isSuperAdmin() {
+    return hasRole('superadmin');
+}
+
+/**
+ * Verifica se o usuário é admin ou superadmin
+ *
+ * @return bool
+ */
+function isAdmin() {
+    return hasRole('admin') || hasRole('superadmin');
+}
+
+/**
+ * Verifica se o usuário pode editar dados
+ * (apenas admins e superadmins)
+ *
+ * @return bool
+ */
+function canEdit() {
+    return isAdmin();
+}
+
+/**
+ * Verifica se o usuário pode gerenciar outros usuários
+ * (apenas superadmins)
+ *
+ * @return bool
+ */
+function canManageUsers() {
+    return isSuperAdmin();
+}
+
+/**
+ * Verifica se o usuário pode visualizar logs de auditoria
+ * (apenas superadmins)
+ *
+ * @return bool
+ */
+function canViewAuditLogs() {
+    return isSuperAdmin();
+}
+
+/**
+ * Retorna o nome amigável da role
+ *
+ * @param string $role
+ * @return string
+ */
+function getRoleName($role) {
+    $roles = [
+        'superadmin' => 'Super Administrador',
+        'admin' => 'Administrador',
+        'viewer' => 'Visualizador'
+    ];
+    return $roles[$role] ?? 'Desconhecido';
+}
+
 // ===== COMISSÕES E PAGAMENTOS =====
 
 /**

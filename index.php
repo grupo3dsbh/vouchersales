@@ -49,6 +49,7 @@ if ($godmode_enabled && isset($_POST['godmode_login'])) {
         $_SESSION['godmode_user'] = $user['name'];
         $_SESSION['godmode_username'] = $user['username'];
         $_SESSION['godmode_user_id'] = $user['id'];
+        $_SESSION['godmode_user_role'] = $user['role'] ?? 'admin'; // Armazena role
 
         // Regenera token CSRF após login
         $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
@@ -62,6 +63,7 @@ if (isset($_POST['godmode_logout'])) {
     unset($_SESSION['godmode_user']);
     unset($_SESSION['godmode_username']);
     unset($_SESSION['godmode_user_id']);
+    unset($_SESSION['godmode_user_role']);
     header('Location: ?godmode=on');
     exit;
 }
@@ -127,6 +129,7 @@ if ($is_admin_mode && isset($_POST['admin_login'])) {
         $_SESSION['admin_authenticated'] = true;
         $_SESSION['godmode_user_id'] = $user['id'];
         $_SESSION['godmode_user'] = $user['name'];
+        $_SESSION['godmode_user_role'] = $user['role'] ?? 'admin'; // Armazena role
         // Recalcula is_main_admin
         $is_main_admin = true;
     } else {
@@ -138,6 +141,7 @@ if (isset($_POST['admin_logout'])) {
     unset($_SESSION['admin_authenticated']);
     unset($_SESSION['godmode_user_id']);
     unset($_SESSION['godmode_user']);
+    unset($_SESSION['godmode_user_role']);
     header('Location: ?admin=1&godmode=on');
     exit;
 }
