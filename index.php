@@ -1589,7 +1589,7 @@ $is_admin_authenticated = $is_admin_mode && isset($_SESSION['admin_authenticated
                     <?php if (!empty($accumulated_data['months'])): ?>
                         <div class="alert alert-info" style="background: linear-gradient(135deg, #17a2b8 0%, #138496 100%); color: white; border: none; padding: 20px; margin-bottom: 20px;">
                             <h4 style="margin-bottom: 15px; text-align: center;">
-                                <i class="fas fa-history"></i> Saldo Acumulado (Meses Anteriores)
+                                <i class="fas fa-history"></i> Histórico de Vendas por Mês
                             </h4>
 
                             <!-- Detalhamento por Mês -->

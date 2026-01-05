@@ -1993,7 +1993,7 @@ function getPromoterAccumulatedBalance($promoterName, $currentMonth) {
                 FROM sales s
                 LEFT JOIN payments p ON (s.promoter = p.promoter AND s.month_reference = p.month)
                 WHERE s.promoter = ?
-                    AND s.month_reference < ?
+                    AND s.month_reference <= ?
                     AND s.campaign_name NOT LIKE '%SITE%'
                 GROUP BY s.month_reference, p.paid, p.paid_at, p.paid_by
                 ORDER BY s.month_reference DESC";
