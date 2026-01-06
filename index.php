@@ -1697,20 +1697,20 @@ $is_admin_authenticated = $is_admin_mode && isset($_SESSION['admin_authenticated
                     <?php if ($accumulated_balance['quantity'] > 0): ?>
                         <div class="stats-card" style="background: linear-gradient(135deg, #28a745 0%, #218838 100%); margin-top: 20px;">
                             <h3 style="margin-bottom: 15px; text-align: center;">
-                                <i class="fas fa-calculator"></i> Total Geral (Acumulado + Mês Atual)
+                                <i class="fas fa-calculator"></i> Total Geral (Todos os Meses)
                             </h3>
                             <div class="stats-grid">
                                 <div class="stat-item">
                                     <div class="stat-label"><i class="fas fa-shopping-cart"></i> Vouchers</div>
-                                    <div class="stat-value"><?= $accumulated_balance['quantity'] + $stats['quantity'] ?></div>
+                                    <div class="stat-value"><?= $accumulated_balance['quantity'] ?></div>
                                 </div>
                                 <div class="stat-item">
                                     <div class="stat-label"><i class="fas fa-dollar-sign"></i> Valor Total</div>
-                                    <div class="stat-value">R$ <?= number_format($accumulated_balance['total'] + $stats['total'], 2, ',', '.') ?></div>
+                                    <div class="stat-value">R$ <?= number_format($accumulated_balance['total'], 2, ',', '.') ?></div>
                                 </div>
                                 <div class="stat-item">
-                                    <div class="stat-label"><i class="fas fa-hand-holding-usd"></i> Comissão (25%)</div>
-                                    <div class="stat-value">R$ <?= number_format($accumulated_balance['commission'] + $stats['commission'], 2, ',', '.') ?></div>
+                                    <div class="stat-label"><i class="fas fa-hand-holding-usd"></i> Comissão</div>
+                                    <div class="stat-value">R$ <?= number_format($accumulated_balance['commission'], 2, ',', '.') ?></div>
                                 </div>
                             </div>
                         </div>
