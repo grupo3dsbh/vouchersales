@@ -6,6 +6,71 @@
 
 require_once __DIR__ . '/Database.php';
 
+// ===== DEBUG HELPERS =====
+
+/**
+ * Verifica se o debug está ativado
+ */
+function isDebugEnabled() {
+    static $debug_enabled = null;
+
+    if ($debug_enabled === null) {
+        try {
+            $db = Database::getConnection();
+            $sql = "SELECT setting_value FROM system_settings WHERE setting_key = 'debug_enabled'";
+            $stmt = $db->query($sql);
+            $result = $stmt ? $stmt->fetchColumn() : false;
+            $debug_enabled = ($result === '1');
+        } catch (Exception $e) {
+            $debug_enabled = false;
+        }
+    }
+
+    return $debug_enabled;
+}
+
+/**
+ * Verifica se debug no console está ativado
+ */
+function isDebugConsoleEnabled() {
+    static $debug_console = null;
+
+    if ($debug_console === null) {
+        try {
+            $db = Database::getConnection();
+            $sql = "SELECT setting_value FROM system_settings WHERE setting_key = 'debug_console'";
+            $stmt = $db->query($sql);
+            $result = $stmt ? $stmt->fetchColumn() : false;
+            $debug_console = ($result === '1');
+        } catch (Exception $e) {
+            $debug_console = false;
+        }
+    }
+
+    return $debug_console;
+}
+
+/**
+ * Verifica se debug em error.log está ativado
+ */
+function isDebugErrorLogEnabled() {
+    static $debug_error_log = null;
+
+    if ($debug_error_log === null) {
+        try {
+            $db = Database::getConnection();
+            $sql = "SELECT setting_value FROM system_settings WHERE setting_key = 'debug_error_log'";
+            $stmt = $db->query($sql);
+            $result = $stmt ? $stmt->fetchColumn() : false;
+            $debug_error_log = ($result === '1');
+        } catch (Exception $e) {
+            $debug_error_log = false;
+        }
+    }
+
+    return $debug_error_log;
+}
+
 // ===== CONFIGURAÇÕES =====
 
 /**
@@ -2304,8 +2369,12 @@ function savePromoterCommissionHistory($promoterName, $month, $commissionPercent
  * @return float Percentual (ex: 25.00)
  */
 function getPromoterCommissionForMonth($promoterName, $month) {
+    $debugEnabled = isDebugEnabled() && isDebugErrorLogEnabled();
+
     try {
-        error_log("🔍 getPromoterCommissionForMonth - Buscando comissão para: $promoterName em $month");
+        if ($debugEnabled) {
+            error_log("🔍 getPromoterCommissionForMonth - Buscando comissão para: $promoterName em $month");
+        }
 
         // PRIORIDADE 1: Busca comissão ESPECÍFICA do promotor+mês
         $sql = "SELECT commission_type, commission_value, commission_percentage
@@ -2313,12 +2382,17 @@ function getPromoterCommissionForMonth($promoterName, $month) {
                 WHERE promoter_name = ? AND month_reference = ?";
 
         $history = Database::fetchOne($sql, [$promoterName, $month]);
-        error_log("   ├─ PRIORIDADE 1 (específica): " . ($history ? json_encode($history) : 'NADA'));
+
+        if ($debugEnabled) {
+            error_log("   ├─ PRIORIDADE 1 (específica): " . ($history ? json_encode($history) : 'NADA'));
+        }
 
         if ($history) {
             // Se tem novo formato (commission_type/commission_value)
             if (isset($history['commission_type'])) {
-                error_log("   └─ ✅ USANDO PRIORIDADE 1: " . $history['commission_type'] . " = " . $history['commission_value']);
+                if ($debugEnabled) {
+                    error_log("   └─ ✅ USANDO PRIORIDADE 1: " . $history['commission_type'] . " = " . $history['commission_value']);
+                }
                 return [
                     'type' => $history['commission_type'],
                     'value' => (float)$history['commission_value'],
@@ -2327,7 +2401,9 @@ function getPromoterCommissionForMonth($promoterName, $month) {
             }
             // Formato antigo (apenas percentage)
             if (isset($history['commission_percentage'])) {
-                error_log("   └─ ✅ USANDO PRIORIDADE 1 (formato antigo): " . $history['commission_percentage'] . "%");
+                if ($debugEnabled) {
+                    error_log("   └─ ✅ USANDO PRIORIDADE 1 (formato antigo): " . $history['commission_percentage'] . "%");
+                }
                 return [
                     'type' => 'percentage',
                     'value' => (float)$history['commission_percentage'],
@@ -2342,10 +2418,15 @@ function getPromoterCommissionForMonth($promoterName, $month) {
                 WHERE promoter_name = '__ALL__' AND month_reference = ?";
 
         $monthDefault = Database::fetchOne($sql, [$month]);
-        error_log("   ├─ PRIORIDADE 2 (geral __ALL__): " . ($monthDefault ? json_encode($monthDefault) : 'NADA'));
+
+        if ($debugEnabled) {
+            error_log("   ├─ PRIORIDADE 2 (geral __ALL__): " . ($monthDefault ? json_encode($monthDefault) : 'NADA'));
+        }
 
         if ($monthDefault && isset($monthDefault['commission_type'])) {
-            error_log("   └─ ✅ USANDO PRIORIDADE 2: " . $monthDefault['commission_type'] . " = " . $monthDefault['commission_value']);
+            if ($debugEnabled) {
+                error_log("   └─ ✅ USANDO PRIORIDADE 2: " . $monthDefault['commission_type'] . " = " . $monthDefault['commission_value']);
+            }
             return [
                 'type' => $monthDefault['commission_type'],
                 'value' => (float)$monthDefault['commission_value'],
@@ -2355,10 +2436,15 @@ function getPromoterCommissionForMonth($promoterName, $month) {
 
         // PRIORIDADE 3: Busca do cadastro do promotor
         $promoter = getPromoterByName($promoterName);
-        error_log("   ├─ PRIORIDADE 3 (cadastro): " . ($promoter && !empty($promoter['commission_percentage']) ? $promoter['commission_percentage'] . "%" : 'NADA'));
+
+        if ($debugEnabled) {
+            error_log("   ├─ PRIORIDADE 3 (cadastro): " . ($promoter && !empty($promoter['commission_percentage']) ? $promoter['commission_percentage'] . "%" : 'NADA'));
+        }
 
         if ($promoter && !empty($promoter['commission_percentage'])) {
-            error_log("   └─ ✅ USANDO PRIORIDADE 3: " . $promoter['commission_percentage'] . "%");
+            if ($debugEnabled) {
+                error_log("   └─ ✅ USANDO PRIORIDADE 3: " . $promoter['commission_percentage'] . "%");
+            }
             return [
                 'type' => 'percentage',
                 'value' => (float)$promoter['commission_percentage'],
@@ -2367,7 +2453,9 @@ function getPromoterCommissionForMonth($promoterName, $month) {
         }
 
         // PRIORIDADE 4: Padrão global: 25%
-        error_log("   └─ ⚠️ USANDO PRIORIDADE 4 (PADRÃO): 25%");
+        if ($debugEnabled) {
+            error_log("   └─ ⚠️ USANDO PRIORIDADE 4 (PADRÃO): 25%");
+        }
         return [
             'type' => 'percentage',
             'value' => 25.00,
@@ -2375,7 +2463,9 @@ function getPromoterCommissionForMonth($promoterName, $month) {
         ];
 
     } catch (Exception $e) {
-        error_log("❌ ERRO ao buscar comissão do mês: " . $e->getMessage());
+        if ($debugEnabled) {
+            error_log("❌ ERRO ao buscar comissão do mês: " . $e->getMessage());
+        }
         return [
             'type' => 'percentage',
             'value' => 25.00,

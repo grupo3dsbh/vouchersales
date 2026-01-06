@@ -1,6 +1,12 @@
 <?php
+session_start();
 require_once '../config.php';
 require_once '../functions.php';
+
+// Verifica se usuário está autenticado e é admin ou superadmin
+if (!isset($_SESSION['godmode_user_role']) || !in_array($_SESSION['godmode_user_role'], ['admin', 'superadmin'])) {
+    die('<h1>Acesso Negado</h1><p>Apenas administradores podem executar testes.</p><p><a href="../index.php?admin=1&godmode=on">← Voltar</a></p>');
+}
 
 echo "<h1>🧪 Teste de Query de Comissões</h1>";
 echo "<pre style='background: #f5f5f5; padding: 20px; border-radius: 10px;'>";

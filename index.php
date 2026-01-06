@@ -732,20 +732,26 @@ if ($csv_data) {
 
 // Calcula comissão correta para cada promotor do mês de referência
 if ($selected_month && !empty($promoter_stats)) {
-    echo "<script>console.log('🔍 DEBUG - Calculando comissões para mês: " . $selected_month . "');</script>\n";
+    $debugConsole = isDebugEnabled() && isDebugConsoleEnabled();
+
+    if ($debugConsole) {
+        echo "<script>console.log('🔍 DEBUG - Calculando comissões para mês: " . $selected_month . "');</script>\n";
+    }
 
     foreach ($promoter_stats as $promoter => &$stats) {
         $commission_config = getPromoterCommissionForMonth($promoter, $selected_month);
 
-        // DEBUG: Log no console
-        $debug_data = json_encode([
-            'promoter' => $promoter,
-            'month' => $selected_month,
-            'type' => $commission_config['type'],
-            'value' => $commission_config['value'],
-            'source' => $commission_config['source'] ?? 'desconhecido'
-        ], JSON_UNESCAPED_UNICODE);
-        echo "<script>console.log('📊 Comissão para " . addslashes($promoter) . ":', " . $debug_data . ");</script>\n";
+        // DEBUG: Log no console (apenas se debug console ativado)
+        if ($debugConsole) {
+            $debug_data = json_encode([
+                'promoter' => $promoter,
+                'month' => $selected_month,
+                'type' => $commission_config['type'],
+                'value' => $commission_config['value'],
+                'source' => $commission_config['source'] ?? 'desconhecido'
+            ], JSON_UNESCAPED_UNICODE);
+            echo "<script>console.log('📊 Comissão para " . addslashes($promoter) . ":', " . $debug_data . ");</script>\n";
+        }
 
         if ($commission_config['type'] === 'fixed') {
             // Valor fixo POR VENDA
@@ -2253,6 +2259,19 @@ $is_admin_authenticated = $is_admin_mode && isset($_SESSION['admin_authenticated
                                         </p>
                                         <a href="admin/receipt_settings.php" class="btn btn-sm" style="width: 100%; background: #6f42c1; color: white;" target="_blank">
                                             <i class="fas fa-cog"></i> Configurar
+                                        </a>
+                                    </div>
+
+                                    <!-- Configurações de Debug -->
+                                    <div style="background: white; padding: 15px; border-radius: 8px; border: 2px solid #e83e8c; margin-top: 15px;">
+                                        <h6 style="color: #a01854; margin-bottom: 10px;">
+                                            <i class="fas fa-bug"></i> Modo Debug
+                                        </h6>
+                                        <p style="font-size: 12px; color: #666; margin-bottom: 10px;">
+                                            Ativa/desativa logs detalhados no console e servidor
+                                        </p>
+                                        <a href="admin/debug_settings.php" class="btn btn-sm" style="width: 100%; background: #e83e8c; color: white;" target="_blank">
+                                            <i class="fas fa-wrench"></i> Configurar Debug
                                         </a>
                                     </div>
 
