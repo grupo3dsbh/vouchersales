@@ -732,8 +732,20 @@ if ($csv_data) {
 
 // Calcula comissão correta para cada promotor do mês de referência
 if ($selected_month && !empty($promoter_stats)) {
+    echo "<script>console.log('🔍 DEBUG - Calculando comissões para mês: " . $selected_month . "');</script>\n";
+
     foreach ($promoter_stats as $promoter => &$stats) {
         $commission_config = getPromoterCommissionForMonth($promoter, $selected_month);
+
+        // DEBUG: Log no console
+        $debug_data = json_encode([
+            'promoter' => $promoter,
+            'month' => $selected_month,
+            'type' => $commission_config['type'],
+            'value' => $commission_config['value'],
+            'source' => $commission_config['source'] ?? 'desconhecido'
+        ], JSON_UNESCAPED_UNICODE);
+        echo "<script>console.log('📊 Comissão para " . addslashes($promoter) . ":', " . $debug_data . ");</script>\n";
 
         if ($commission_config['type'] === 'fixed') {
             // Valor fixo POR VENDA

@@ -3,10 +3,9 @@ session_start();
 require_once '../config.php';
 require_once '../functions.php';
 
-// Verifica autenticação
-if (!isset($_SESSION['user']) || $_SESSION['role'] !== 'admin') {
-    header('Location: ../login.php');
-    exit;
+// Verifica se usuário está autenticado e é admin ou superadmin
+if (!isset($_SESSION['godmode_user_role']) || !in_array($_SESSION['godmode_user_role'], ['admin', 'superadmin'])) {
+    die('<h1>Acesso Negado</h1><p>Apenas administradores podem visualizar diagnóstico.</p><p><a href="../index.php?admin=1&godmode=on">← Voltar</a></p>');
 }
 
 $db = Database::getConnection();

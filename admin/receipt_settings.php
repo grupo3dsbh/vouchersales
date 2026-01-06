@@ -1,10 +1,11 @@
 <?php
 session_start();
+require_once '../config.php';
 require_once '../functions.php';
 
-// Verifica permissão
-if (!canEdit()) {
-    die('Acesso negado!');
+// Verifica se usuário está autenticado e é admin ou superadmin
+if (!isset($_SESSION['godmode_user_role']) || !in_array($_SESSION['godmode_user_role'], ['admin', 'superadmin'])) {
+    die('<h1>Acesso Negado</h1><p>Apenas administradores podem configurar recebimentos.</p><p><a href="../index.php?admin=1&godmode=on">← Voltar</a></p>');
 }
 
 $db = Database::getConnection();

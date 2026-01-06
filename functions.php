@@ -2305,26 +2305,33 @@ function savePromoterCommissionHistory($promoterName, $month, $commissionPercent
  */
 function getPromoterCommissionForMonth($promoterName, $month) {
     try {
+        error_log("🔍 getPromoterCommissionForMonth - Buscando comissão para: $promoterName em $month");
+
         // PRIORIDADE 1: Busca comissão ESPECÍFICA do promotor+mês
         $sql = "SELECT commission_type, commission_value, commission_percentage
                 FROM promoter_commission_history
                 WHERE promoter_name = ? AND month_reference = ?";
 
         $history = Database::fetchOne($sql, [$promoterName, $month]);
+        error_log("   ├─ PRIORIDADE 1 (específica): " . ($history ? json_encode($history) : 'NADA'));
 
         if ($history) {
             // Se tem novo formato (commission_type/commission_value)
             if (isset($history['commission_type'])) {
+                error_log("   └─ ✅ USANDO PRIORIDADE 1: " . $history['commission_type'] . " = " . $history['commission_value']);
                 return [
                     'type' => $history['commission_type'],
-                    'value' => (float)$history['commission_value']
+                    'value' => (float)$history['commission_value'],
+                    'source' => 'PRIORIDADE 1 - Específica do promotor+mês'
                 ];
             }
             // Formato antigo (apenas percentage)
             if (isset($history['commission_percentage'])) {
+                error_log("   └─ ✅ USANDO PRIORIDADE 1 (formato antigo): " . $history['commission_percentage'] . "%");
                 return [
                     'type' => 'percentage',
-                    'value' => (float)$history['commission_percentage']
+                    'value' => (float)$history['commission_percentage'],
+                    'source' => 'PRIORIDADE 1 - Específica (formato antigo)'
                 ];
             }
         }
@@ -2335,34 +2342,44 @@ function getPromoterCommissionForMonth($promoterName, $month) {
                 WHERE promoter_name = '__ALL__' AND month_reference = ?";
 
         $monthDefault = Database::fetchOne($sql, [$month]);
+        error_log("   ├─ PRIORIDADE 2 (geral __ALL__): " . ($monthDefault ? json_encode($monthDefault) : 'NADA'));
 
         if ($monthDefault && isset($monthDefault['commission_type'])) {
+            error_log("   └─ ✅ USANDO PRIORIDADE 2: " . $monthDefault['commission_type'] . " = " . $monthDefault['commission_value']);
             return [
                 'type' => $monthDefault['commission_type'],
-                'value' => (float)$monthDefault['commission_value']
+                'value' => (float)$monthDefault['commission_value'],
+                'source' => 'PRIORIDADE 2 - Geral do mês (__ALL__)'
             ];
         }
 
         // PRIORIDADE 3: Busca do cadastro do promotor
         $promoter = getPromoterByName($promoterName);
+        error_log("   ├─ PRIORIDADE 3 (cadastro): " . ($promoter && !empty($promoter['commission_percentage']) ? $promoter['commission_percentage'] . "%" : 'NADA'));
+
         if ($promoter && !empty($promoter['commission_percentage'])) {
+            error_log("   └─ ✅ USANDO PRIORIDADE 3: " . $promoter['commission_percentage'] . "%");
             return [
                 'type' => 'percentage',
-                'value' => (float)$promoter['commission_percentage']
+                'value' => (float)$promoter['commission_percentage'],
+                'source' => 'PRIORIDADE 3 - Cadastro do promotor'
             ];
         }
 
         // PRIORIDADE 4: Padrão global: 25%
+        error_log("   └─ ⚠️ USANDO PRIORIDADE 4 (PADRÃO): 25%");
         return [
             'type' => 'percentage',
-            'value' => 25.00
+            'value' => 25.00,
+            'source' => 'PRIORIDADE 4 - Padrão global (25%)'
         ];
 
     } catch (Exception $e) {
-        error_log("Erro ao buscar comissão do mês: " . $e->getMessage());
+        error_log("❌ ERRO ao buscar comissão do mês: " . $e->getMessage());
         return [
             'type' => 'percentage',
-            'value' => 25.00
+            'value' => 25.00,
+            'source' => 'ERRO - Usando padrão 25%'
         ];
     }
 }
