@@ -1707,7 +1707,13 @@ $is_admin_authenticated = $is_admin_mode && isset($_SESSION['admin_authenticated
                                                 <td style="padding: 10px; font-weight: bold;"><?= $months_pt[$m] . '/' . $y ?></td>
                                                 <td style="padding: 10px; text-align: center;"><?= $month_data['quantity'] ?></td>
                                                 <td style="padding: 10px; text-align: right;">R$ <?= number_format($month_data['total'], 2, ',', '.') ?></td>
-                                                <td style="padding: 10px; text-align: center; font-weight: bold; color: #ffd700;"><?= number_format($month_data['commission_percentage'], 1) ?>%</td>
+                                                <td style="padding: 10px; text-align: center; font-weight: bold; color: #ffd700;">
+                                                    <?php if ($month_data['commission_type'] === 'fixed'): ?>
+                                                        R$ <?= number_format($month_data['commission_value'], 2, ',', '.') ?>/venda
+                                                    <?php else: ?>
+                                                        <?= number_format($month_data['commission_value'], 1, ',', '.') ?>%
+                                                    <?php endif; ?>
+                                                </td>
                                                 <td style="padding: 10px; text-align: right;">R$ <?= number_format($month_data['commission'], 2, ',', '.') ?></td>
                                                 <td style="padding: 10px; text-align: center;">
                                                     <?php if ($month_data['paid']): ?>
