@@ -1179,36 +1179,23 @@ $is_admin_authenticated = $is_admin_mode && isset($_SESSION['admin_authenticated
                             <form id="receiptUploadForm" enctype="multipart/form-data">
                                 <input type="hidden" id="receipt_promoter" name="promoter">
                                 <input type="hidden" id="receipt_month" name="month">
-
-                                <!-- Modo de Armazenamento -->
-                                <div style="margin-bottom: 20px;">
-                                    <label style="display: block; margin-bottom: 10px; font-weight: 600; color: #333;">
-                                        <i class="fas fa-database"></i> Modo de Armazenamento:
-                                    </label>
-
-                                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
-                                        <label style="display: flex; flex-direction: column; align-items: center; padding: 15px; border: 2px solid #17a2b8; border-radius: 8px; cursor: pointer; transition: all 0.3s;" class="storage-option">
-                                            <input type="radio" name="storage_mode" value="file" checked style="margin-bottom: 5px;">
-                                            <i class="fas fa-folder" style="font-size: 24px; margin-bottom: 5px; color: #17a2b8;"></i>
-                                            <strong style="font-size: 13px;">Arquivo</strong>
-                                            <small style="text-align: center; color: #666; margin-top: 5px;">Salva no servidor</small>
-                                        </label>
-
-                                        <label style="display: flex; flex-direction: column; align-items: center; padding: 15px; border: 2px solid #6f42c1; border-radius: 8px; cursor: pointer; transition: all 0.3s;" class="storage-option">
-                                            <input type="radio" name="storage_mode" value="base64" style="margin-bottom: 5px;">
-                                            <i class="fas fa-database" style="font-size: 24px; margin-bottom: 5px; color: #6f42c1;"></i>
-                                            <strong style="font-size: 13px;">Base64</strong>
-                                            <small style="text-align: center; color: #666; margin-top: 5px;">Salva no banco</small>
-                                        </label>
-
-                                        <label style="display: flex; flex-direction: column; align-items: center; padding: 15px; border: 2px solid #6c757d; border-radius: 8px; cursor: pointer; transition: all 0.3s;" class="storage-option">
-                                            <input type="radio" name="storage_mode" value="none" style="margin-bottom: 5px;">
-                                            <i class="fas fa-times-circle" style="font-size: 24px; margin-bottom: 5px; color: #6c757d;"></i>
-                                            <strong style="font-size: 13px;">Nenhum</strong>
-                                            <small style="text-align: center; color: #666; margin-top: 5px;">Remover</small>
-                                        </label>
-                                    </div>
-                                </div>
+                                <?php
+                                // Busca método de armazenamento configurado pelo admin
+                                $storage_method = 'file'; // padrão
+                                try {
+                                    $sql = "SELECT setting_value FROM system_settings WHERE setting_key = 'receipt_storage_method'";
+                                    $result = $db->query($sql);
+                                    if ($result) {
+                                        $method = $result->fetchColumn();
+                                        if ($method) {
+                                            $storage_method = $method;
+                                        }
+                                    }
+                                } catch (Exception $e) {
+                                    // Ignora erro, usa padrão
+                                }
+                                ?>
+                                <input type="hidden" name="storage_mode" value="<?= $storage_method ?>">
 
                                 <!-- Upload de Arquivo -->
                                 <div id="fileUploadSection" style="margin-bottom: 20px;">
@@ -1229,12 +1216,17 @@ $is_admin_authenticated = $is_admin_mode && isset($_SESSION['admin_authenticated
                                 </div>
 
                                 <!-- Botões -->
-                                <div style="display: flex; gap: 10px; margin-top: 20px;">
-                                    <button type="button" onclick="closeReceiptModal()" class="btn btn-secondary" style="flex: 1;">
-                                        <i class="fas fa-times"></i> Cancelar
-                                    </button>
-                                    <button type="submit" class="btn btn-success" style="flex: 2;">
-                                        <i class="fas fa-upload"></i> <span id="uploadButtonText">Enviar Comprovante</span>
+                                <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 20px;">
+                                    <div style="display: flex; gap: 10px;">
+                                        <button type="button" onclick="closeReceiptModal()" class="btn btn-secondary" style="flex: 1;">
+                                            <i class="fas fa-times"></i> Cancelar
+                                        </button>
+                                        <button type="submit" class="btn btn-success" style="flex: 2;">
+                                            <i class="fas fa-upload"></i> Enviar Comprovante e Marcar Pago
+                                        </button>
+                                    </div>
+                                    <button type="button" onclick="markAsPaidWithoutReceipt()" class="btn btn-warning" style="width: 100%;">
+                                        <i class="fas fa-check-circle"></i> Marcar como Pago SEM Comprovante
                                     </button>
                                 </div>
 
@@ -2236,6 +2228,19 @@ $is_admin_authenticated = $is_admin_mode && isset($_SESSION['admin_authenticated
                                         </p>
                                         <a href="admin/manage_commissions.php" class="btn btn-success btn-sm" style="width: 100%;" target="_blank">
                                             <i class="fas fa-cog"></i> Abrir Gerenciador
+                                        </a>
+                                    </div>
+
+                                    <!-- Configurações de Comprovantes -->
+                                    <div style="background: white; padding: 15px; border-radius: 8px; border: 2px solid #6f42c1; margin-top: 15px;">
+                                        <h6 style="color: #4a2c7b; margin-bottom: 10px;">
+                                            <i class="fas fa-file-invoice"></i> Configurações de Comprovantes
+                                        </h6>
+                                        <p style="font-size: 12px; color: #666; margin-bottom: 10px;">
+                                            Define método de armazenamento (arquivo/base64)
+                                        </p>
+                                        <a href="admin/receipt_settings.php" class="btn btn-sm" style="width: 100%; background: #6f42c1; color: white;" target="_blank">
+                                            <i class="fas fa-cog"></i> Configurar
                                         </a>
                                     </div>
 

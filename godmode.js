@@ -568,30 +568,48 @@ function deleteReceiptConfirm(promoter, month) {
     });
 }
 
+/**
+ * Marca pagamento como pago SEM enviar comprovante
+ */
+function markAsPaidWithoutReceipt() {
+    const promoter = document.getElementById('receipt_promoter').value;
+    const month = document.getElementById('receipt_month').value;
+
+    if (!confirm(`Marcar como PAGO sem comprovante?\n\nConsultor: ${promoter}\nMês: ${month}`)) {
+        return;
+    }
+
+    // Envia requisição para marcar como pago
+    const formData = new FormData();
+    formData.append('action', 'mark_paid_no_receipt');
+    formData.append('promoter', promoter);
+    formData.append('month', month);
+
+    fetch('ajax_receipt_upload.php', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert(data.message);
+            closeReceiptModal();
+            window.location.reload();
+        } else {
+            alert('Erro: ' + data.message);
+        }
+    })
+    .catch(error => {
+        console.error('Erro:', error);
+        alert('Erro ao marcar como pago');
+    });
+}
+
 // Preview de imagem ao selecionar arquivo
 document.addEventListener('DOMContentLoaded', function() {
     const fileInput = document.getElementById('receipt_file');
     const preview = document.getElementById('receiptPreview');
     const previewImage = document.getElementById('previewImage');
-    const storageModeInputs = document.querySelectorAll('input[name="storage_mode"]');
-    const fileUploadSection = document.getElementById('fileUploadSection');
-    const uploadButtonText = document.getElementById('uploadButtonText');
-
-    // Atualiza visual quando muda o modo de armazenamento
-    storageModeInputs.forEach(input => {
-        input.addEventListener('change', function() {
-            if (this.value === 'none') {
-                fileUploadSection.style.display = 'none';
-                preview.style.display = 'none';
-                fileInput.required = false;
-                uploadButtonText.textContent = 'Remover Comprovante';
-            } else {
-                fileUploadSection.style.display = 'block';
-                fileInput.required = true;
-                uploadButtonText.textContent = 'Enviar Comprovante';
-            }
-        });
-    });
 
     // Preview de imagem
     if (fileInput) {

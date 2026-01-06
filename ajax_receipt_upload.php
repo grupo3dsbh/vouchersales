@@ -46,6 +46,32 @@ if (empty($promoter) || empty($month)) {
 try {
     $db = Database::getConnection();
 
+    // ===== MARCAR COMO PAGO SEM COMPROVANTE =====
+    if ($action === 'mark_paid_no_receipt') {
+        // Verifica se o pagamento existe
+        $payment = getPaymentData($promoter, $month);
+
+        if (!$payment) {
+            // Cria registro de pagamento
+            $sql = "INSERT INTO payments (promoter, month, paid, paid_by, paid_at)
+                    VALUES (?, ?, 1, ?, NOW())";
+            Database::execute($sql, [$promoter, $month, $userId]);
+        } else {
+            // Atualiza registro existente
+            $sql = "UPDATE payments SET paid = 1, paid_by = ?, paid_at = NOW() WHERE promoter = ? AND month = ?";
+            Database::execute($sql, [$userId, $promoter, $month]);
+        }
+
+        // Registra em audit log
+        logAudit($userId, 'mark_paid_no_receipt', 'payments', 0, "Marcou $promoter ($month) como pago SEM comprovante");
+
+        echo json_encode([
+            'success' => true,
+            'message' => 'Pagamento marcado como PAGO com sucesso!'
+        ]);
+        exit;
+    }
+
     // ===== UPLOAD DE COMPROVANTE =====
     if ($action === 'upload_receipt') {
         // Verifica se o pagamento existe
