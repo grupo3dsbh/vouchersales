@@ -4,6 +4,7 @@ error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
 define('DATA_DIR', __DIR__ . '/data');
+define('MASTER_PIN', '7890'); // PIN mestre para administradores acessarem qualquer consultor
 
 // Inclui funções auxiliares
 require_once 'functions.php';
@@ -475,6 +476,14 @@ if (isset($_POST['verify_info']) && isset($_SESSION['promoter_id_temp'])) {
 
     if ($promoter) {
         switch ($verification_type) {
+            case 'master_pin':
+                // PIN mestre para administradores
+                // Só permite se o usuário estiver autenticado no godmode
+                if ($godmode_authenticated && $verification_value === MASTER_PIN) {
+                    $is_valid = true;
+                }
+                break;
+
             case 'cpf_last4':
                 // Últimos 4 dígitos do CPF
                 $cpf = preg_replace('/[^0-9]/', '', $promoter['document'] ?? '');
@@ -502,8 +511,17 @@ if (isset($_POST['verify_info']) && isset($_SESSION['promoter_id_temp'])) {
     }
 
     if ($is_valid) {
-        // Verificação bem-sucedida - pede para criar PIN
-        $promoter_auth_step = 'create_pin';
+        // Se usou PIN mestre, autentica direto (não cria PIN)
+        if ($verification_type === 'master_pin') {
+            $_SESSION['authenticated_promoter'] = $promoter['name'];
+            $_SESSION['promoter_id'] = $promoter_id;
+            unset($_SESSION['promoter_id_temp']);
+            header('Location: ' . $_SERVER['PHP_SELF'] . '?month=' . urlencode($selected_month));
+            exit;
+        } else {
+            // Verificação normal - pede para criar PIN
+            $promoter_auth_step = 'create_pin';
+        }
     } else {
         $promoter_auth_error = 'Informação incorreta! Tente novamente.';
         $promoter_auth_step = 'verify_info';
@@ -1453,6 +1471,10 @@ $is_admin_authenticated = $is_admin_mode && isset($_SESSION['admin_authenticated
                                     <select name="verification_type" id="verification_type" class="form-control" required
                                             onchange="updateVerificationPlaceholder()">
                                         <option value="">-- Selecione --</option>
+                                        <?php if ($godmode_authenticated): ?>
+                                        <option value="master_pin" style="background: #fff3cd; font-weight: bold;">🔐 PIN Mestre (Admin)</option>
+                                        <option disabled>────────────────</option>
+                                        <?php endif; ?>
                                         <option value="cpf_last4">Últimos 4 dígitos do CPF</option>
                                         <option value="cpf_first4">Primeiros 4 dígitos do CPF</option>
                                         <option value="middle_name">Nome do meio</option>
@@ -1479,6 +1501,11 @@ $is_admin_authenticated = $is_admin_mode && isset($_SESSION['admin_authenticated
                                     const input = document.getElementById('verification_value');
 
                                     switch(type) {
+                                        case 'master_pin':
+                                            input.placeholder = 'Digite o PIN mestre de administrador';
+                                            input.maxLength = 10;
+                                            input.type = 'password';
+                                            break;
                                         case 'cpf_last4':
                                             input.placeholder = 'Digite os 4 últimos dígitos do CPF';
                                             input.maxLength = 4;
