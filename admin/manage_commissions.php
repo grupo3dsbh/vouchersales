@@ -51,30 +51,43 @@ try {
     // Já foi renomeada
 }
 
-// Salvar comissão
+// Salvar/Atualizar comissão
 if (isset($_POST['save_commission'])) {
     $promoter = $_POST['promoter'] ?? '';
     $month = $_POST['month'] ?? '';
     $type = $_POST['commission_type'] ?? 'percentage';
     $value = floatval($_POST['commission_value'] ?? 0);
+    $edit_id = intval($_POST['edit_id'] ?? 0);
 
     // Permite "TODOS" (usa '__ALL__' ao invés de NULL)
     $promoterName = ($promoter === 'TODOS' || empty($promoter)) ? '__ALL__' : $promoter;
 
     if (!empty($month) && $value > 0) {
         try {
-            $sql = "INSERT INTO promoter_commission_history (promoter_name, month_reference, commission_type, commission_value)
-                    VALUES (?, ?, ?, ?)
-                    ON DUPLICATE KEY UPDATE
-                        commission_type = VALUES(commission_type),
-                        commission_value = VALUES(commission_value)";
-            $stmt = $db->prepare($sql);
-            $stmt->execute([$promoterName, $month, $type, $value]);
+            if ($edit_id > 0) {
+                // ATUALIZAR comissão existente
+                $sql = "UPDATE promoter_commission_history
+                        SET promoter_name = ?, month_reference = ?, commission_type = ?, commission_value = ?
+                        WHERE id = ?";
+                $stmt = $db->prepare($sql);
+                $stmt->execute([$promoterName, $month, $type, $value, $edit_id]);
 
-            if ($promoterName === '__ALL__') {
-                $success_msg = "Comissão GERAL salva com sucesso! Todos os consultores usarão esta comissão para $month (exceto se tiverem comissão específica).";
+                $success_msg = "✅ Comissão atualizada com sucesso!";
             } else {
-                $success_msg = "Comissão específica salva para $promoterName no mês $month!";
+                // INSERIR nova comissão
+                $sql = "INSERT INTO promoter_commission_history (promoter_name, month_reference, commission_type, commission_value)
+                        VALUES (?, ?, ?, ?)
+                        ON DUPLICATE KEY UPDATE
+                            commission_type = VALUES(commission_type),
+                            commission_value = VALUES(commission_value)";
+                $stmt = $db->prepare($sql);
+                $stmt->execute([$promoterName, $month, $type, $value]);
+
+                if ($promoterName === '__ALL__') {
+                    $success_msg = "✅ Comissão GERAL salva com sucesso! Todos os consultores usarão esta comissão para $month (exceto se tiverem comissão específica).";
+                } else {
+                    $success_msg = "✅ Comissão específica salva para $promoterName no mês $month!";
+                }
             }
         } catch (Exception $e) {
             $error_msg = "Erro ao salvar comissão: " . $e->getMessage();
@@ -131,9 +144,14 @@ $commissions = $db->query("SELECT pch.*, p.commission_percentage as default_perc
 <div class="container">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px;">
         <h1><i class="fas fa-percent"></i> Gerenciar Comissões Mensais</h1>
-        <a href="../index.php?admin=1&godmode=on" class="btn btn-secondary">
-            <i class="fas fa-arrow-left"></i> Voltar
-        </a>
+        <div>
+            <a href="diagnostico_comissoes.php" class="btn btn-info" title="Ver diagnóstico detalhado do banco">
+                <i class="fas fa-stethoscope"></i> Diagnóstico
+            </a>
+            <a href="../index.php?admin=1&godmode=on" class="btn btn-secondary">
+                <i class="fas fa-arrow-left"></i> Voltar
+            </a>
+        </div>
     </div>
 
     <?php if (isset($success_msg)): ?>
@@ -158,12 +176,13 @@ $commissions = $db->query("SELECT pch.*, p.commission_percentage as default_perc
             <p style="margin: 0;"><strong>📌 Prioridade:</strong> Comissão específica → Comissão geral do mês → Cadastro do promotor → Padrão (25%)</p>
         </div>
 
-        <form method="POST">
+        <form method="POST" id="commission_form">
+            <input type="hidden" name="edit_id" id="edit_id" value="">
             <div class="row">
                 <div class="col-md-3">
                     <div class="form-group">
                         <label><i class="fas fa-user"></i> Promotor:</label>
-                        <select name="promoter" class="form-control" required>
+                        <select name="promoter" id="promoter" class="form-control" required>
                             <option value="">Selecione...</option>
                             <option value="TODOS" style="background: #fff3cd; font-weight: bold;">🌟 -- Todos os Consultores --</option>
                             <option disabled>────────────────</option>
@@ -181,7 +200,7 @@ $commissions = $db->query("SELECT pch.*, p.commission_percentage as default_perc
                 <div class="col-md-2">
                     <div class="form-group">
                         <label><i class="fas fa-calendar"></i> Mês:</label>
-                        <select name="month" class="form-control" required>
+                        <select name="month" id="month" class="form-control" required>
                             <option value="">Selecione...</option>
                             <?php foreach ($months as $m): ?>
                                 <option value="<?= htmlspecialchars($m) ?>"><?= htmlspecialchars($m) ?></option>
@@ -203,15 +222,18 @@ $commissions = $db->query("SELECT pch.*, p.commission_percentage as default_perc
                 <div class="col-md-2">
                     <div class="form-group">
                         <label id="value_label"><i class="fas fa-percent"></i> Valor (%):</label>
-                        <input type="number" name="commission_value" class="form-control" step="0.01" min="0" required placeholder="Ex: 25.00">
+                        <input type="number" name="commission_value" id="commission_value" class="form-control" step="0.01" min="0" required placeholder="Ex: 25.00">
                     </div>
                 </div>
 
                 <div class="col-md-2">
                     <div class="form-group">
                         <label>&nbsp;</label>
-                        <button type="submit" name="save_commission" class="btn btn-primary btn-block">
-                            <i class="fas fa-save"></i> Salvar
+                        <button type="submit" name="save_commission" class="btn btn-primary btn-block" id="save_btn">
+                            <i class="fas fa-save"></i> <span id="btn_text">Salvar</span>
+                        </button>
+                        <button type="button" class="btn btn-secondary btn-block" id="cancel_btn" style="display:none;" onclick="cancelEdit()">
+                            <i class="fas fa-times"></i> Cancelar
                         </button>
                     </div>
                 </div>
@@ -279,9 +301,12 @@ $commissions = $db->query("SELECT pch.*, p.commission_percentage as default_perc
                             </td>
                             <td><small><?= date('d/m/Y H:i', strtotime($comm['created_at'])) ?></small></td>
                             <td>
+                                <button type="button" class="btn btn-sm btn-warning" onclick="editCommission(<?= $comm['id'] ?>, '<?= $comm['promoter_name'] === '__ALL__' ? 'TODOS' : htmlspecialchars($comm['promoter_name'], ENT_QUOTES) ?>', '<?= $comm['month_reference'] ?>', '<?= $comm['commission_type'] ?>', <?= $comm['commission_value'] ?>)" title="Editar">
+                                    <i class="fas fa-edit"></i>
+                                </button>
                                 <form method="POST" style="display: inline;" onsubmit="return confirm('Remover esta configuração?');">
                                     <input type="hidden" name="commission_id" value="<?= $comm['id'] ?>">
-                                    <button type="submit" name="delete_commission" class="btn btn-sm btn-danger">
+                                    <button type="submit" name="delete_commission" class="btn btn-sm btn-danger" title="Remover">
                                         <i class="fas fa-trash"></i>
                                     </button>
                                 </form>
@@ -315,6 +340,37 @@ function updateLabel() {
     } else {
         label.innerHTML = '<i class="fas fa-dollar-sign"></i> Valor (R$):';
     }
+}
+
+function editCommission(id, promoter, month, type, value) {
+    // Preenche o formulário com os dados existentes
+    document.getElementById('edit_id').value = id;
+    document.getElementById('promoter').value = promoter;
+    document.getElementById('month').value = month;
+    document.getElementById('commission_type').value = type;
+    document.getElementById('commission_value').value = value;
+
+    // Atualiza o label
+    updateLabel();
+
+    // Muda o botão para "Atualizar"
+    document.getElementById('btn_text').textContent = 'Atualizar';
+    document.getElementById('save_btn').className = 'btn btn-success btn-block';
+    document.getElementById('cancel_btn').style.display = 'block';
+
+    // Scroll para o formulário
+    document.getElementById('commission_form').scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function cancelEdit() {
+    // Limpa o formulário
+    document.getElementById('commission_form').reset();
+    document.getElementById('edit_id').value = '';
+
+    // Restaura o botão para "Salvar"
+    document.getElementById('btn_text').textContent = 'Salvar';
+    document.getElementById('save_btn').className = 'btn btn-primary btn-block';
+    document.getElementById('cancel_btn').style.display = 'none';
 }
 </script>
 </body>
