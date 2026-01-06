@@ -612,6 +612,36 @@ if ($godmode_enabled && $godmode_authenticated && !empty($available_months)) {
 }
 // ===== FIM NOVO =====
 
+// Verifica quais migrações já foram executadas
+$migrations_done = [];
+try {
+    $db = Database::getConnection();
+
+    // Verifica coluna 'role' na tabela users
+    $result = $db->query("SHOW COLUMNS FROM users LIKE 'role'")->fetch();
+    $migrations_done['user_roles'] = !empty($result);
+
+    // Verifica colunas de comprovante na tabela payments
+    $result = $db->query("SHOW COLUMNS FROM payments LIKE 'receipt%'")->fetchAll();
+    $migrations_done['payment_receipts'] = count($result) > 0;
+
+    // Verifica se índice de comissões gerais existe
+    $result = $db->query("SHOW INDEXES FROM promoter_commission_history WHERE Key_name = 'uk_promoter_month_v2'")->fetch();
+    $migrations_done['commission_defaults'] = !empty($result);
+
+    // Verifica coluna master_pin na tabela users
+    $result = $db->query("SHOW COLUMNS FROM users LIKE 'master_pin'")->fetch();
+    $migrations_done['master_pin'] = !empty($result);
+} catch (Exception $e) {
+    // Se der erro, assume que nada foi migrado
+    $migrations_done = [
+        'user_roles' => false,
+        'payment_receipts' => false,
+        'commission_defaults' => false,
+        'master_pin' => false
+    ];
+}
+
 // Busca saldo acumulado dos meses anteriores (do banco de dados)
 $accumulated_data = [];
 if ($selected_month && $selected_promoter) {
@@ -681,8 +711,8 @@ if ($csv_data) {
         
         $promoter_stats[$promoter]['quantity']++;
         $promoter_stats[$promoter]['total'] += $package['value'];
-        $promoter_stats[$promoter]['commission'] += ($package['value'] * 0.25);
-        
+        // Comissão será calculada depois com base na configuração
+
         $promoter_stats[$promoter]['sales'][] = [
             'voucher' => $voucher,
             'sale_id' => $package['sale_id'],
@@ -690,14 +720,43 @@ if ($csv_data) {
             'campaign' => $package['campaign'],
             'package' => $package['package'],
             'value' => $package['value'],
-            'commission' => $package['value'] * 0.25,
+            'commission' => 0, // Será calculado depois
             'date' => $package['date'],
             'customers' => $package['customers'],
             'items' => $package['items']
         ];
     }
-    
+
     sort($promoters);
+}
+
+// Calcula comissão correta para cada promotor do mês de referência
+if ($selected_month && !empty($promoter_stats)) {
+    foreach ($promoter_stats as $promoter => &$stats) {
+        $commission_config = getPromoterCommissionForMonth($promoter, $selected_month);
+
+        if ($commission_config['type'] === 'fixed') {
+            // Valor fixo POR VENDA
+            $stats['commission'] = $stats['quantity'] * $commission_config['value'];
+
+            // Atualiza cada venda
+            foreach ($stats['sales'] as &$sale) {
+                $sale['commission'] = $commission_config['value'];
+            }
+        } else {
+            // Percentual sobre valor total
+            $stats['commission'] = $stats['total'] * ($commission_config['value'] / 100);
+
+            // Atualiza cada venda
+            foreach ($stats['sales'] as &$sale) {
+                $sale['commission'] = $sale['value'] * ($commission_config['value'] / 100);
+            }
+        }
+
+        $stats['commission_type'] = $commission_config['type'];
+        $stats['commission_value'] = $commission_config['value'];
+    }
+    unset($stats); // Libera referência
 }
 
 $is_admin_authenticated = $is_admin_mode && isset($_SESSION['admin_authenticated']);
@@ -1057,7 +1116,7 @@ $is_admin_authenticated = $is_admin_mode && isset($_SESSION['admin_authenticated
                                         <th>Mês/Ano</th>
                                         <th>Vouchers</th>
                                         <th>Valor Total</th>
-                                        <th>Comissão (25%)</th>
+                                        <th>Comissão</th>
                                         <th>Status</th>
                                         <th style="width: 120px;">Comprovante</th>
                                     </tr>
@@ -1720,7 +1779,12 @@ $is_admin_authenticated = $is_admin_mode && isset($_SESSION['admin_authenticated
                                 <div class="stat-value">R$ <?= number_format($stats['total'], 2, ',', '.') ?></div>
                             </div>
                             <div class="stat-item">
-                                <div class="stat-label"><i class="fas fa-hand-holding-usd"></i> Comissão (25%)</div>
+                                <div class="stat-label">
+                                    <i class="fas fa-hand-holding-usd"></i> Comissão
+                                    <?php if (isset($stats['commission_type'])): ?>
+                                        (<?= $stats['commission_type'] === 'fixed' ? 'R$ ' . number_format($stats['commission_value'], 2, ',', '.') . '/venda' : number_format($stats['commission_value'], 2, ',', '.') . '%' ?>)
+                                    <?php endif; ?>
+                                </div>
                                 <div class="stat-value">R$ <?= number_format($stats['commission'], 2, ',', '.') ?></div>
                             </div>
                         </div>
@@ -2186,6 +2250,7 @@ $is_admin_authenticated = $is_admin_mode && isset($_SESSION['admin_authenticated
 
                                     <?php if (canManageUsers()): ?>
                                     <!-- Migrar Roles (uma vez) -->
+                                    <?php if (!$migrations_done['user_roles']): ?>
                                     <div style="background: white; padding: 15px; border-radius: 8px; border: 2px solid #e83e8c;">
                                         <h6 style="color: #7d2050; margin-bottom: 10px;">
                                             <i class="fas fa-user-shield"></i> Níveis de Acesso
@@ -2198,9 +2263,11 @@ $is_admin_authenticated = $is_admin_mode && isset($_SESSION['admin_authenticated
                                         </a>
                                     </div>
                                     <?php endif; ?>
+                                    <?php endif; ?>
 
                                     <?php if (canEdit()): ?>
                                     <!-- Migração de Comprovantes -->
+                                    <?php if (!$migrations_done['payment_receipts']): ?>
                                     <div style="background: white; padding: 15px; border-radius: 8px; border: 2px solid #20c997;">
                                         <h6 style="color: #0d6e4f; margin-bottom: 10px;">
                                             <i class="fas fa-receipt"></i> Sistema de Comprovantes
@@ -2212,8 +2279,10 @@ $is_admin_authenticated = $is_admin_mode && isset($_SESSION['admin_authenticated
                                             <i class="fas fa-database"></i> Migrar Tabela
                                         </a>
                                     </div>
+                                    <?php endif; ?>
 
                                     <!-- Migração de Comissões Gerais -->
+                                    <?php if (!$migrations_done['commission_defaults']): ?>
                                     <div style="background: white; padding: 15px; border-radius: 8px; border: 2px solid #ffc107;">
                                         <h6 style="color: #856404; margin-bottom: 10px;">
                                             <i class="fas fa-users-cog"></i> Comissões Gerais
@@ -2225,8 +2294,10 @@ $is_admin_authenticated = $is_admin_mode && isset($_SESSION['admin_authenticated
                                             <i class="fas fa-cog"></i> Migrar Comissões
                                         </a>
                                     </div>
+                                    <?php endif; ?>
 
                                     <!-- Migração de PIN Mestre -->
+                                    <?php if (!$migrations_done['master_pin']): ?>
                                     <div style="background: white; padding: 15px; border-radius: 8px; border: 2px solid #17a2b8; margin-top: 15px;">
                                         <h6 style="color: #0c5460; margin-bottom: 10px;">
                                             <i class="fas fa-key"></i> PIN Mestre Admins
@@ -2238,6 +2309,7 @@ $is_admin_authenticated = $is_admin_mode && isset($_SESSION['admin_authenticated
                                             <i class="fas fa-cog"></i> Migrar PIN Mestre
                                         </a>
                                     </div>
+                                    <?php endif; ?>
                                     <?php endif; ?>
                                 </div>
                             </div>
