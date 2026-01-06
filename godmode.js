@@ -380,6 +380,12 @@ function editUserModal(user) {
         roleField.value = user.role || 'admin';
     }
 
+    // Define o master_pin se existir
+    const masterPinField = document.getElementById('edit_master_pin');
+    if (masterPinField) {
+        masterPinField.value = user.master_pin || '';
+    }
+
     document.getElementById('editUserModal').classList.add('active');
     document.body.style.overflow = 'hidden';
 }

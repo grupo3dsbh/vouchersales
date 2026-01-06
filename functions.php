@@ -156,10 +156,12 @@ function addUser($username, $password, $name, $email = null) {
  * @param string $username
  * @param string $password (opcional, se vazio não altera)
  * @param string $name
+ * @param string $role
  * @param string $email (opcional)
+ * @param string $master_pin (opcional, PIN mestre do admin)
  * @return array ['success' => bool, 'message' => string]
  */
-function editUser($id, $username, $password, $name, $role = 'admin', $email = null) {
+function editUser($id, $username, $password, $name, $role = 'admin', $email = null, $master_pin = null) {
     try {
         // Busca usuário atual
         $oldUser = Database::fetchOne("SELECT * FROM users WHERE id = ?", [$id]);
@@ -181,6 +183,13 @@ function editUser($id, $username, $password, $name, $role = 'admin', $email = nu
             $role = 'admin'; // Fallback seguro
         }
 
+        // Valida master_pin se fornecido
+        if ($master_pin !== null && $master_pin !== '') {
+            if (!preg_match('/^[0-9]{4,10}$/', $master_pin)) {
+                return ['success' => false, 'message' => 'PIN mestre deve ter entre 4 e 10 dígitos!'];
+            }
+        }
+
         // Atualiza usuário
         if (!empty($password)) {
             // Valida tamanho da senha
@@ -189,11 +198,22 @@ function editUser($id, $username, $password, $name, $role = 'admin', $email = nu
             }
 
             $hashedPassword = password_hash($password, PASSWORD_BCRYPT);
-            $sql = "UPDATE users SET username = ?, password = ?, name = ?, role = ?, email = ? WHERE id = ?";
-            Database::execute($sql, [$username, $hashedPassword, $name, $role, $email, $id]);
+
+            if ($master_pin !== null && $master_pin !== '') {
+                $sql = "UPDATE users SET username = ?, password = ?, name = ?, role = ?, email = ?, master_pin = ? WHERE id = ?";
+                Database::execute($sql, [$username, $hashedPassword, $name, $role, $email, $master_pin, $id]);
+            } else {
+                $sql = "UPDATE users SET username = ?, password = ?, name = ?, role = ?, email = ? WHERE id = ?";
+                Database::execute($sql, [$username, $hashedPassword, $name, $role, $email, $id]);
+            }
         } else {
-            $sql = "UPDATE users SET username = ?, name = ?, role = ?, email = ? WHERE id = ?";
-            Database::execute($sql, [$username, $name, $role, $email, $id]);
+            if ($master_pin !== null && $master_pin !== '') {
+                $sql = "UPDATE users SET username = ?, name = ?, role = ?, email = ?, master_pin = ? WHERE id = ?";
+                Database::execute($sql, [$username, $name, $role, $email, $master_pin, $id]);
+            } else {
+                $sql = "UPDATE users SET username = ?, name = ?, role = ?, email = ? WHERE id = ?";
+                Database::execute($sql, [$username, $name, $role, $email, $id]);
+            }
         }
 
         // Log de auditoria

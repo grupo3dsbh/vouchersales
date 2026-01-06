@@ -4,7 +4,6 @@ error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
 define('DATA_DIR', __DIR__ . '/data');
-define('MASTER_PIN', '7890'); // PIN mestre para administradores acessarem qualquer consultor
 
 // Inclui funções auxiliares
 require_once 'functions.php';
@@ -83,7 +82,8 @@ if ($is_main_admin && isset($_POST['add_user'])) {
 
 if ($is_main_admin && isset($_POST['edit_user'])) {
     $role = $_POST['edit_role'] ?? 'admin';
-    $result = editUser($_POST['edit_id'], $_POST['edit_username'], $_POST['edit_password'], $_POST['edit_name'], $role);
+    $master_pin = $_POST['edit_master_pin'] ?? null;
+    $result = editUser($_POST['edit_id'], $_POST['edit_username'], $_POST['edit_password'], $_POST['edit_name'], $role, null, $master_pin);
     if ($result['success']) {
         $success_msg = $result['message'];
     } else {
@@ -435,18 +435,39 @@ if (isset($_POST['verify_pin']) && isset($_SESSION['promoter_id_temp'])) {
     $pin = $_POST['pin'] ?? '';
     $promoter_id = $_SESSION['promoter_id_temp'];
 
-    if (verifyPromoterPIN($promoter_id, $pin)) {
+    $pin_valid = verifyPromoterPIN($promoter_id, $pin);
+    $admin_access = false;
+    $admin_user = null;
+
+    // Se PIN não é do consultor, verifica se é master PIN de algum admin
+    if (!$pin_valid && !empty($pin)) {
+        $sql = "SELECT id, name, username FROM users WHERE master_pin = ? AND master_pin IS NOT NULL";
+        $admin_user = Database::fetchOne($sql, [$pin]);
+
+        if ($admin_user) {
+            $pin_valid = true;
+            $admin_access = true;
+        }
+    }
+
+    if ($pin_valid) {
         // PIN correto
         $promoter_name = $_SESSION['promoter_login_attempt'];
         $_SESSION['selected_promoter'] = $promoter_name;
         $_SESSION['promoter_authenticated'] = true;
         $_SESSION['promoter_id'] = $promoter_id;
-        $_SESSION['auth_method'] = 'pin';
+        $_SESSION['auth_method'] = $admin_access ? 'admin_master_pin' : 'pin';
 
         unset($_SESSION['promoter_login_attempt']);
         unset($_SESSION['promoter_id_temp']);
 
-        logAudit($promoter_id, 'promoter_login_pin', 'promoters', $promoter_id);
+        if ($admin_access) {
+            // Registra acesso do admin com master PIN
+            logAudit($admin_user['id'], 'admin_master_pin_access', 'promoters', $promoter_id,
+                     "Admin {$admin_user['name']} acessou relatório de {$promoter_name} usando master PIN");
+        } else {
+            logAudit($promoter_id, 'promoter_login_pin', 'promoters', $promoter_id);
+        }
     } else {
         // Verifica quantas tentativas
         $sql = "SELECT pin_attempts FROM promoters WHERE id = ?";
@@ -476,14 +497,6 @@ if (isset($_POST['verify_info']) && isset($_SESSION['promoter_id_temp'])) {
 
     if ($promoter) {
         switch ($verification_type) {
-            case 'master_pin':
-                // PIN mestre para administradores
-                // Só permite se o usuário estiver autenticado no godmode
-                if ($godmode_authenticated && $verification_value === MASTER_PIN) {
-                    $is_valid = true;
-                }
-                break;
-
             case 'cpf_last4':
                 // Últimos 4 dígitos do CPF
                 $cpf = preg_replace('/[^0-9]/', '', $promoter['document'] ?? '');
@@ -511,17 +524,8 @@ if (isset($_POST['verify_info']) && isset($_SESSION['promoter_id_temp'])) {
     }
 
     if ($is_valid) {
-        // Se usou PIN mestre, autentica direto (não cria PIN)
-        if ($verification_type === 'master_pin') {
-            $_SESSION['authenticated_promoter'] = $promoter['name'];
-            $_SESSION['promoter_id'] = $promoter_id;
-            unset($_SESSION['promoter_id_temp']);
-            header('Location: ' . $_SERVER['PHP_SELF'] . '?month=' . urlencode($selected_month));
-            exit;
-        } else {
-            // Verificação normal - pede para criar PIN
-            $promoter_auth_step = 'create_pin';
-        }
+        // Verificação bem-sucedida - pede para criar PIN
+        $promoter_auth_step = 'create_pin';
     } else {
         $promoter_auth_error = 'Informação incorreta! Tente novamente.';
         $promoter_auth_step = 'verify_info';
@@ -1327,7 +1331,17 @@ $is_admin_authenticated = $is_admin_mode && isset($_SESSION['admin_authenticated
                                     <label style="display: block; margin-bottom: 5px; font-weight: 600;">Nova Senha:</label>
                                     <input type="password" name="edit_password" id="edit_password" class="form-control" placeholder="Deixe em branco para manter a atual">
                                 </div>
-                                
+
+                                <div style="margin-bottom: 15px;">
+                                    <label style="display: block; margin-bottom: 5px; font-weight: 600;">
+                                        <i class="fas fa-key"></i> PIN Mestre (Admin):
+                                    </label>
+                                    <input type="text" name="edit_master_pin" id="edit_master_pin" class="form-control" placeholder="4 dígitos para acesso rápido a relatórios" maxlength="10" pattern="[0-9]{4,10}">
+                                    <small style="color: #666; display: block; margin-top: 5px;">
+                                        PIN pessoal do admin para acessar relatórios de consultores rapidamente. Deixe em branco para não alterar.
+                                    </small>
+                                </div>
+
                                 <div style="display: flex; gap: 10px;">
                                     <button type="submit" name="edit_user" class="btn btn-primary" style="flex: 1;">
                                         <i class="fas fa-save"></i> Salvar
@@ -1471,10 +1485,6 @@ $is_admin_authenticated = $is_admin_mode && isset($_SESSION['admin_authenticated
                                     <select name="verification_type" id="verification_type" class="form-control" required
                                             onchange="updateVerificationPlaceholder()">
                                         <option value="">-- Selecione --</option>
-                                        <?php if ($godmode_authenticated): ?>
-                                        <option value="master_pin" style="background: #fff3cd; font-weight: bold;">🔐 PIN Mestre (Admin)</option>
-                                        <option disabled>────────────────</option>
-                                        <?php endif; ?>
                                         <option value="cpf_last4">Últimos 4 dígitos do CPF</option>
                                         <option value="cpf_first4">Primeiros 4 dígitos do CPF</option>
                                         <option value="middle_name">Nome do meio</option>
@@ -1501,11 +1511,6 @@ $is_admin_authenticated = $is_admin_mode && isset($_SESSION['admin_authenticated
                                     const input = document.getElementById('verification_value');
 
                                     switch(type) {
-                                        case 'master_pin':
-                                            input.placeholder = 'Digite o PIN mestre de administrador';
-                                            input.maxLength = 10;
-                                            input.type = 'password';
-                                            break;
                                         case 'cpf_last4':
                                             input.placeholder = 'Digite os 4 últimos dígitos do CPF';
                                             input.maxLength = 4;
@@ -2220,6 +2225,19 @@ $is_admin_authenticated = $is_admin_mode && isset($_SESSION['admin_authenticated
                                             <i class="fas fa-cog"></i> Migrar Comissões
                                         </a>
                                     </div>
+
+                                    <!-- Migração de PIN Mestre -->
+                                    <div style="background: white; padding: 15px; border-radius: 8px; border: 2px solid #17a2b8; margin-top: 15px;">
+                                        <h6 style="color: #0c5460; margin-bottom: 10px;">
+                                            <i class="fas fa-key"></i> PIN Mestre Admins
+                                        </h6>
+                                        <p style="font-size: 12px; color: #666; margin-bottom: 10px;">
+                                            Adicionar campo para PIN mestre dos administradores
+                                        </p>
+                                        <a href="admin/migrate_master_pin.php" class="btn btn-sm" style="width: 100%; background: #17a2b8; color: white;" target="_blank">
+                                            <i class="fas fa-cog"></i> Migrar PIN Mestre
+                                        </a>
+                                    </div>
                                     <?php endif; ?>
                                 </div>
                             </div>
@@ -2927,7 +2945,17 @@ $is_admin_authenticated = $is_admin_mode && isset($_SESSION['admin_authenticated
                                     <label style="display: block; margin-bottom: 5px; font-weight: 600;">Nova Senha:</label>
                                     <input type="password" name="edit_password" id="edit_password" class="form-control" placeholder="Deixe em branco para manter a atual">
                                 </div>
-                                
+
+                                <div style="margin-bottom: 15px;">
+                                    <label style="display: block; margin-bottom: 5px; font-weight: 600;">
+                                        <i class="fas fa-key"></i> PIN Mestre (Admin):
+                                    </label>
+                                    <input type="text" name="edit_master_pin" id="edit_master_pin" class="form-control" placeholder="4 dígitos para acesso rápido a relatórios" maxlength="10" pattern="[0-9]{4,10}">
+                                    <small style="color: #666; display: block; margin-top: 5px;">
+                                        PIN pessoal do admin para acessar relatórios de consultores rapidamente. Deixe em branco para não alterar.
+                                    </small>
+                                </div>
+
                                 <div style="display: flex; gap: 10px;">
                                     <button type="submit" name="edit_user" class="btn btn-primary" style="flex: 1;">
                                         <i class="fas fa-save"></i> Salvar
