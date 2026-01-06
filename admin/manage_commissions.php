@@ -58,8 +58,8 @@ if (isset($_POST['save_commission'])) {
     $type = $_POST['commission_type'] ?? 'percentage';
     $value = floatval($_POST['commission_value'] ?? 0);
 
-    // Permite "TODOS" (promoter vazio significa NULL = comissão geral)
-    $promoterName = ($promoter === 'TODOS' || empty($promoter)) ? null : $promoter;
+    // Permite "TODOS" (usa '__ALL__' ao invés de NULL)
+    $promoterName = ($promoter === 'TODOS' || empty($promoter)) ? '__ALL__' : $promoter;
 
     if (!empty($month) && $value > 0) {
         try {
@@ -71,7 +71,7 @@ if (isset($_POST['save_commission'])) {
             $stmt = $db->prepare($sql);
             $stmt->execute([$promoterName, $month, $type, $value]);
 
-            if ($promoterName === null) {
+            if ($promoterName === '__ALL__') {
                 $success_msg = "Comissão GERAL salva com sucesso! Todos os consultores usarão esta comissão para $month (exceto se tiverem comissão específica).";
             } else {
                 $success_msg = "Comissão específica salva para $promoterName no mês $month!";
@@ -246,7 +246,7 @@ $commissions = $db->query("SELECT pch.*, p.commission_percentage as default_perc
                         <tr>
                             <td><strong><?= htmlspecialchars($comm['month_reference']) ?></strong></td>
                             <td>
-                                <?php if ($comm['promoter_name'] === null): ?>
+                                <?php if ($comm['promoter_name'] === '__ALL__'): ?>
                                     <span style="background: #fff3cd; padding: 3px 8px; border-radius: 5px; font-weight: bold;">
                                         🌟 TODOS OS CONSULTORES
                                     </span>

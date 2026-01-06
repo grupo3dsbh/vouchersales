@@ -2329,10 +2329,10 @@ function getPromoterCommissionForMonth($promoterName, $month) {
             }
         }
 
-        // PRIORIDADE 2: Busca comissão GERAL do mês (promoter_name IS NULL)
+        // PRIORIDADE 2: Busca comissão GERAL do mês (promoter_name = '__ALL__')
         $sql = "SELECT commission_type, commission_value
                 FROM promoter_commission_history
-                WHERE promoter_name IS NULL AND month_reference = ?";
+                WHERE promoter_name = '__ALL__' AND month_reference = ?";
 
         $monthDefault = Database::fetchOne($sql, [$month]);
 
