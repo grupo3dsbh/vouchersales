@@ -578,7 +578,7 @@ function recalculatePaymentCache($promoter, $month) {
         $commission_config = getPromoterCommissionForMonth($promoter, $month);
 
         // Busca dados de vendas do mês
-        $sql = "SELECT COUNT(*) as qty, SUM(value) as total
+        $sql = "SELECT COUNT(*) as qty, SUM(product_value) as total
                 FROM sales
                 WHERE promoter = ? AND month_reference = ?";
         $stmt = Database::getConnection()->prepare($sql);
@@ -2419,7 +2419,7 @@ function getPromoterCommissionForMonth($promoterName, $month) {
         }
 
         // PRIORIDADE 1: Busca comissão ESPECÍFICA do promotor+mês
-        $sql = "SELECT commission_type, commission_value, commission_percentage
+        $sql = "SELECT commission_type, commission_value
                 FROM promoter_commission_history
                 WHERE promoter_name = ? AND month_reference = ?";
 

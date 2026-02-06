@@ -33,7 +33,7 @@ if (isset($_POST['clear_cache'])) {
             $commission_config = getPromoterCommissionForMonth($promoter, $month);
 
             // Busca quantidade de vouchers do mês
-            $sql = "SELECT COUNT(*) as qty, SUM(value) as total
+            $sql = "SELECT COUNT(*) as qty, SUM(product_value) as total
                     FROM sales
                     WHERE promoter = ? AND month_reference = ?";
             $stmt = $db->prepare($sql);
