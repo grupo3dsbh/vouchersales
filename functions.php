@@ -568,6 +568,48 @@ function saveCommissionData($promoter, $month, $amount, $vouchers) {
     }
 }
 
+/**
+ * Recalcula comissão na tabela payments (limpa cache)
+ * Usado quando uma comissão é alterada no admin
+ */
+function recalculatePaymentCache($promoter, $month) {
+    try {
+        // Busca comissão configurada
+        $commission_config = getPromoterCommissionForMonth($promoter, $month);
+
+        // Busca dados de vendas do mês
+        $sql = "SELECT COUNT(*) as qty, SUM(value) as total
+                FROM sales
+                WHERE promoter = ? AND month_reference = ?";
+        $stmt = Database::getConnection()->prepare($sql);
+        $stmt->execute([$promoter, $month]);
+        $sales_data = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        $vouchers = $sales_data['qty'] ?? 0;
+        $total_value = $sales_data['total'] ?? 0;
+
+        // Calcula nova comissão
+        if ($commission_config['type'] === 'fixed') {
+            $new_commission = $vouchers * $commission_config['value'];
+        } else {
+            $new_commission = $total_value * ($commission_config['value'] / 100);
+        }
+
+        // Atualiza cache na tabela payments
+        $sql = "INSERT INTO payments (promoter, month, amount, vouchers, paid)
+                VALUES (?, ?, ?, ?, 0)
+                ON DUPLICATE KEY UPDATE
+                    amount = ?,
+                    vouchers = ?";
+        Database::execute($sql, [$promoter, $month, $new_commission, $vouchers, $new_commission, $vouchers]);
+
+        return true;
+    } catch (Exception $e) {
+        error_log("Erro ao recalcular cache de comissão: " . $e->getMessage());
+        return false;
+    }
+}
+
 // ===== COMPROVANTES DE PAGAMENTO =====
 
 /**

@@ -89,6 +89,24 @@ if (isset($_POST['save_commission'])) {
                     $success_msg = "✅ Comissão específica salva para $promoterName no mês $month!";
                 }
             }
+
+            // LIMPA CACHE: Recalcula comissões na tabela payments para o mês afetado
+            if ($promoterName === '__ALL__') {
+                // Se é comissão geral, recalcula TODOS os promotores do mês
+                $sql = "SELECT DISTINCT promoter FROM sales WHERE month_reference = ?";
+                $stmt = $db->prepare($sql);
+                $stmt->execute([$month]);
+                $promoters = $stmt->fetchAll(PDO::FETCH_COLUMN);
+
+                foreach ($promoters as $p) {
+                    recalculatePaymentCache($p, $month);
+                }
+            } else {
+                // Se é comissão específica, recalcula só esse promotor
+                recalculatePaymentCache($promoterName, $month);
+            }
+
+            $success_msg .= " <small>(Cache recalculado)</small>";
         } catch (Exception $e) {
             $error_msg = "Erro ao salvar comissão: " . $e->getMessage();
         }
