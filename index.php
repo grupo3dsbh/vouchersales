@@ -1029,6 +1029,15 @@ $is_admin_authenticated = $is_admin_mode && isset($_SESSION['admin_authenticated
                                             <td class="last-month-column">R$ <?= number_format($month_info['value'], 2, ',', '.') ?></td>
                                             <td class="last-month-column" style="color: #28a745; font-weight: 600;">
                                                 R$ <?= number_format($month_info['commission'], 2, ',', '.') ?>
+                                                <?php if (isset($month_info['commission_type'])): ?>
+                                                    <br><small style="font-size: 10px; opacity: 0.7;">
+                                                        <?php if ($month_info['commission_type'] === 'percentage'): ?>
+                                                            (<?= number_format($month_info['commission_value'], 1) ?>%)
+                                                        <?php else: ?>
+                                                            (R$ <?= number_format($month_info['commission_value'], 2, ',', '.') ?> fixo)
+                                                        <?php endif; ?>
+                                                    </small>
+                                                <?php endif; ?>
                                             </td>
                                         <?php else: ?>
                                             <td class="last-month-column" style="color: #999;">-</td>
